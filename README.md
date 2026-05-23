@@ -13,7 +13,7 @@ Background service and overlay widget: Winmate GCS joystick → `RC_CHANNELS_OVE
 
 - Reads the Winmate GCS Joystick (or any Linux input device) via `evdev`
 - Sends `RC_CHANNELS_OVERRIDE` to ArduPilot at 50 Hz through MAVProxy — **independent of QGC**
-- Displays a always-on-top telemetry overlay (link, mode, battery, GPS, attitude, joystick, buttons)
+- Displays an always-on-top telemetry overlay in the **top-right corner** of the screen (210×280 px)
 - Parses drone state from MAVLink (`HEARTBEAT`, `ATTITUDE`, `SYS_STATUS`, `GPS_RAW_INT`, `VFR_HUD`)
 
 ```
@@ -37,9 +37,13 @@ MAV_widget/
 ├── probe_input.py         # interactive input device probe tool
 ├── test_joystick.py       # quick joystick test
 ├── requirements.txt
+├── docs/
+│   └── MAVPROXY_QGC.md    # MAVProxy + QGC port setup and troubleshooting
 ├── scripts/
-│   ├── run_widget.sh      # launch widget on local display
-│   ├── autostart-gcs.sh   # start MAVProxy after login
+│   ├── run_widget.sh           # launch widget (waits for MAVProxy link)
+│   ├── wait_mavproxy_link.sh   # wait for heartbeat on widget port
+│   ├── autostart-gcs.sh        # start MAVProxy after login
+│   ├── toggle-screen-lock.sh   # kiosk mode on/off
 │   ├── start-drone-hotspot.sh
 │   └── stop-drone-hotspot.sh
 ├── systemd/
@@ -56,6 +60,22 @@ MAV_widget/
 ### widget.py
 
 Main application. Connects to MAVProxy on `udp:127.0.0.1:14552` for telemetry and RC. Port **14550** is MAVProxy master only — do not point the widget or QGC at it.
+
+**Overlay window**
+
+| Property | Value |
+|---|---|
+| Size | 210 × 280 px |
+| Position | Top-right of the primary screen (20 px margin) |
+| Flags | Always on top, no window decorations |
+| Content | Link status, flight mode, battery, GPS, attitude, stick values, button states |
+
+Position is computed at startup from `root.winfo_screenwidth()`. Override with `--geometry +X+Y` if needed (Tk format: offset from top-left).
+
+```bash
+python3 widget.py                    # top-right (default)
+python3 widget.py --geometry +20+20  # fixed position
+```
 
 ### joystick_reader.py
 
@@ -117,23 +137,36 @@ for p in list_devices():
 
 ```bash
 python3 widget.py
-python3 widget.py --geometry +20+20 -v
+python3 widget.py -v                     # verbose logging
 python3 widget.py --no-joystick          # telemetry only, no RC override
 python3 widget.py --device /dev/input/event9
+python3 widget.py --geometry +100+50    # manual position (default: top-right)
 ```
 
-### MAVProxy (required for telemetry and RC)
+`scripts/run_widget.sh` waits up to 60 s for MAVProxy on port **14552**, then starts the overlay.
+
+### MAVProxy and QGC (required)
+
+MAVProxy is the **only** process that talks to the drone on UDP **14550**. QGC and the widget receive a forwarded copy on separate local ports.
+
+| Port | Address | Client |
+|---|---|---|
+| 14550 | `192.168.53.1` | MAVProxy `--master` (radio / eth0 to drone) |
+| 14551 | `127.0.0.1` | QGroundControl (listen) |
+| 14552 | `127.0.0.1` | This widget (telemetry + RC) |
+
+Start MAVProxy (same as `scripts/autostart-gcs.sh`):
 
 ```bash
 python3 ~/.local/bin/mavproxy.py \
-    --master=udp:192.168.53.1:14550 \
-    --out=udp:127.0.0.1:14551 \
-    --out=udp:127.0.0.1:14552 \
-    --out=udp:192.168.54.255:14550 \
+    --master=udpin:192.168.53.1:14550 \
+    --out=127.0.0.1:14551 \
+    --out=127.0.0.1:14552 \
+    --out=udpbcast:192.168.54.255:14550 \
     --daemon
 ```
 
-The widget uses `udp:127.0.0.1:14552`. **QGC must listen on UDP 14551 only.** Remove any QGC link on port 14550 — it steals the drone port from MAVProxy.
+See [docs/MAVPROXY_QGC.md](docs/MAVPROXY_QGC.md) for official MAVProxy/QGC references and troubleshooting (`mav.tlog` empty, no telemetry, port conflicts).
 
 ### QGC connection settings
 
@@ -141,7 +174,15 @@ The widget uses `udp:127.0.0.1:14552`. **QGC must listen on UDP 14551 only.** Re
 |---|---|
 | Type | UDP |
 | Port | **14551** (Listen) |
-| **Disable** | any UDP link on port **14550** in QGC |
+| **Disable** | **Settings → General → AutoConnect to UDP** (QGC otherwise binds **14550** and blocks MAVProxy) |
+| Comm Links | One manual UDP link on **14551** only — no link on 14550 |
+
+In `~/.config/QGroundControl/QGroundControl.ini`:
+
+```ini
+[AutoConnect]
+autoConnectUDP=false
+```
 
 ---
 
@@ -155,11 +196,19 @@ The widget uses `udp:127.0.0.1:14552`. **QGC must listen on UDP 14551 only.** Re
 sudo ./setup_wifi_ap.sh
 ```
 
-After login:
+After login (boot order):
 
-- `mav-widget.service` — telemetry overlay + joystick RC
-- `autostart-gcs.sh` — MAVProxy to the drone radio link
-- `drone-hotspot.service` — Wi-Fi AP (`MantaAP`, 192.168.54.1/24)
+1. `drone-hotspot.service` — Wi-Fi AP (`MantaAP`, `192.168.54.1/24`) + `hostapd`
+2. `autostart-gcs.sh` — MAVProxy when `hostapd` is active; waits for link on **14552**
+3. `mav-widget.service` — overlay top-right; `ExecStartPre` sleep + `run_widget.sh` wait for MAVProxy
+
+Install system scripts after changing `autostart-gcs.sh`:
+
+```bash
+sudo install -m 755 scripts/autostart-gcs.sh /usr/local/bin/autostart-gcs.sh
+sudo install -m 755 scripts/wait_mavproxy_link.sh /usr/local/bin/wait_mavproxy_link.sh
+systemctl --user restart mav-widget
+```
 
 ---
 

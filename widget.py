@@ -27,6 +27,14 @@ WARN = "#f39c12"
 ERR = "#e74c3c"
 MUTED = "#888888"
 
+WIDGET_WIDTH = 210
+WIDGET_HEIGHT = 280
+WIDGET_MARGIN = 20
+
+
+def _right_geometry(root: tk.Tk) -> str:
+    x = max(WIDGET_MARGIN, root.winfo_screenwidth() - WIDGET_WIDTH - WIDGET_MARGIN)
+    return f"+{x}+{WIDGET_MARGIN}"
 
 class TelemetryWidget:
     REFRESH_MS = 200
@@ -131,7 +139,11 @@ def main() -> None:
     parser.add_argument("--mavlink", default=MAVLINK_URI, help="MAVLink URI (default: MAVProxy output)")
     parser.add_argument("--device", default=None, help="Joystick evdev path (default: auto-detect Winmate)")
     parser.add_argument("--no-joystick", action="store_true", help="Telemetry only, no RC override")
-    parser.add_argument("--geometry", default="+20+20", help="Window position, e.g. +20+20")
+    parser.add_argument(
+        "--geometry",
+        default=None,
+        help="Window position, e.g. +20+20 (default: top-right of screen)",
+    )
     parser.add_argument("-v", "--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -153,7 +165,8 @@ def main() -> None:
             log.error("Joystick failed: %s", exc)
 
     root = tk.Tk()
-    root.geometry(f"210x280{args.geometry}")
+    position = args.geometry if args.geometry else _right_geometry(root)
+    root.geometry(f"{WIDGET_WIDTH}x{WIDGET_HEIGHT}{position}")
     widget = TelemetryWidget(root, state, rc_via_mavproxy=args.no_joystick)
 
     def shutdown(_signum=None, _frame=None) -> None:
