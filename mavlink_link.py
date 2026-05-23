@@ -24,6 +24,8 @@ from config import (
     RC_MAVLINK_URI,
     RC_OVERRIDE_CHANNELS,
     RC_RATE_HZ,
+    MAVLINK_CONNECT_RETRY_S,
+    MAVLINK_HEARTBEAT_TIMEOUT_S,
 )
 from drone_state import SharedState
 
@@ -103,43 +105,88 @@ class MavlinkLink:
         self._target_system = 1
         self._target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
         self._stop = threading.Event()
+        self._link_thread: threading.Thread | None = None
         self._rx_thread: threading.Thread | None = None
         self._tx_thread: threading.Thread | None = None
 
+    def _wait_vehicle_heartbeat(self, timeout_s: float = MAVLINK_HEARTBEAT_TIMEOUT_S) -> None:
+        assert self._master is not None
+        deadline = time.time() + timeout_s
+        while time.time() < deadline:
+            msg = self._master.recv_match(type="HEARTBEAT", blocking=True, timeout=2.0)
+            if msg is None:
+                continue
+            src_sys = msg.get_srcSystem()
+            if src_sys > 0 and msg.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID:
+                self._target_system = src_sys
+                self._target_component = msg.get_srcComponent() or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+                return
+        raise TimeoutError("No vehicle heartbeat (sys>0) within {:.0f}s".format(timeout_s))
+
     def start(self) -> None:
-        log.info("Connecting to MAVLink telemetry: %s", self.uri)
-        self._master = mavutil.mavlink_connection(self.uri)
-        self._master.wait_heartbeat(timeout=10)
-        log.info(
-            "Telemetry heartbeat (sys=%s comp=%s)",
-            self._master.target_system,
-            self._master.target_component,
-        )
-        self._target_system = self._master.target_system
-        self._target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
-
-        if self.rc_uri and self.rc_uri != self.uri:
-            log.info("RC override link: %s", self.rc_uri)
-            self._rc_master = mavutil.mavlink_connection(self.rc_uri)
-
-        log.info("RC override target sys=%s comp=%s", self._target_system, self._target_component)
-
-        self.state.update_drone(connected=True, last_heartbeat=time.time())
+        """Start background connect loop (retries until drone is online)."""
+        if self._link_thread and self._link_thread.is_alive():
+            return
         self._stop.clear()
-        self._rx_thread = threading.Thread(target=self._rx_loop, name="mavlink-rx", daemon=True)
-        self._tx_thread = threading.Thread(target=self._tx_loop, name="mavlink-tx", daemon=True)
-        self._rx_thread.start()
-        self._tx_thread.start()
+        self._link_thread = threading.Thread(target=self._link_loop, name="mavlink-link", daemon=True)
+        self._link_thread.start()
 
-    def stop(self) -> None:
-        self._stop.set()
+    def _close_links(self) -> None:
         if self._rc_master:
             self._rc_master.close()
             self._rc_master = None
         if self._master:
             self._master.close()
             self._master = None
+
+    def _connect_once(self) -> None:
+        log.info("Connecting to MAVLink telemetry: %s", self.uri)
+        self._master = mavutil.mavlink_connection(self.uri)
+        self._target_system = 1
+        self._target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+        self._wait_vehicle_heartbeat()
+        log.info(
+            "Vehicle heartbeat (sys=%s comp=%s)",
+            self._target_system,
+            self._target_component,
+        )
+
+        if self.rc_uri and self.rc_uri != self.uri:
+            log.info("RC override link: %s", self.rc_uri)
+            self._rc_master = mavutil.mavlink_connection(self.rc_uri)
+
+        log.info("RC override target sys=%s comp=%s", self._target_system, self._target_component)
+        self.state.update_drone(connected=True, last_heartbeat=time.time())
+
+    def _link_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                self._connect_once()
+            except Exception as exc:
+                log.warning("MAVLink not ready: %s (retry in %ds)", exc, MAVLINK_CONNECT_RETRY_S)
+                self._close_links()
+                self.state.update_drone(connected=False)
+                if self._stop.wait(MAVLINK_CONNECT_RETRY_S):
+                    break
+                continue
+
+            self._rx_thread = threading.Thread(target=self._rx_loop, name="mavlink-rx", daemon=True)
+            self._tx_thread = threading.Thread(target=self._tx_loop, name="mavlink-tx", daemon=True)
+            self._rx_thread.start()
+            self._tx_thread.start()
+            self._rx_thread.join()
+            self._close_links()
+            self.state.update_drone(connected=False)
+            if self._stop.wait(MAVLINK_CONNECT_RETRY_S):
+                break
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._close_links()
         self.state.update_drone(connected=False)
+        if self._link_thread:
+            self._link_thread.join(timeout=2.0)
+            self._link_thread = None
 
     def _rx_loop(self) -> None:
         assert self._master is not None
@@ -154,8 +201,9 @@ class MavlinkLink:
         if msg_type == "HEARTBEAT":
             src_sys = msg.get_srcSystem()
             src_comp = msg.get_srcComponent()
-            if src_sys == self._target_system and msg.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID:
-                self._target_component = src_comp
+            if src_sys > 0 and msg.autopilot != mavutil.mavlink.MAV_AUTOPILOT_INVALID:
+                self._target_system = src_sys
+                self._target_component = src_comp or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
             base_mode = msg.base_mode
             custom_mode = msg.custom_mode
             armed = bool(base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)

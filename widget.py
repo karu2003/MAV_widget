@@ -144,11 +144,7 @@ def main() -> None:
     mavlink = MavlinkLink(state, uri=args.mavlink)
     joystick = JoystickReader(state, device_path=args.device)
 
-    try:
-        mavlink.start()
-    except Exception as exc:
-        log.error("MAVLink connection failed: %s", exc)
-        log.info("Widget will run without telemetry until link is available.")
+    mavlink.start()
 
     if not args.no_joystick:
         try:
