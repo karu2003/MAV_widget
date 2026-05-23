@@ -40,13 +40,16 @@ MAV_widget/
 ├── docs/
 │   └── MAVPROXY_QGC.md    # MAVProxy + QGC port setup and troubleshooting
 ├── scripts/
-│   ├── run_widget.sh           # launch widget (waits for MAVProxy link)
-│   ├── wait_mavproxy_link.sh   # wait for heartbeat on widget port
-│   ├── autostart-gcs.sh        # start MAVProxy after login
+│   ├── run_widget.sh           # launch widget immediately (no MAVProxy wait)
+│   ├── start_mavproxy.sh       # start MAVProxy daemon
+│   ├── wait_gcs_ready.sh       # fast hostapd / MAVProxy / heartbeat waits
+│   ├── wait_mavproxy_link.sh   # wrapper for optional heartbeat wait
+│   ├── autostart-gcs.sh        # manual / legacy → mavproxy-gcs.service
 │   ├── toggle-screen-lock.sh   # kiosk mode on/off
 │   ├── start-drone-hotspot.sh
 │   └── stop-drone-hotspot.sh
 ├── systemd/
+│   ├── mavproxy-gcs.service    # MAVProxy on login (independent of widget)
 │   ├── mav-widget.service
 │   └── drone-hotspot.service
 ├── setup_autostart.sh     # install widget user service
@@ -143,7 +146,7 @@ python3 widget.py --device /dev/input/event9
 python3 widget.py --geometry +100+50    # manual position (default: top-right)
 ```
 
-`scripts/run_widget.sh` waits up to 60 s for MAVProxy on port **14552**, then starts the overlay.
+`run_widget.sh` starts the overlay **immediately**. MAVProxy and the drone link are independent — `mavlink_link.py` reconnects in the background (shows **NO LINK** until telemetry arrives).
 
 ### MAVProxy and QGC (required)
 
@@ -163,7 +166,9 @@ python3 ~/.local/bin/mavproxy.py \
     --out=127.0.0.1:14551 \
     --out=127.0.0.1:14552 \
     --out=udpbcast:192.168.54.255:14550 \
-    --daemon
+    --nowait \
+    --force-connected \
+    --non-interactive
 ```
 
 See [docs/MAVPROXY_QGC.md](docs/MAVPROXY_QGC.md) for official MAVProxy/QGC references and troubleshooting (`mav.tlog` empty, no telemetry, port conflicts).
@@ -189,26 +194,39 @@ autoConnectUDP=false
 ## Autostart (Winmate GCS)
 
 ```bash
-# Widget overlay (systemd user service)
+# MAVProxy + widget (systemd user services, ordered startup)
 ./setup_autostart.sh
 
 # Wi-Fi AP + hotspot boot service
 sudo ./setup_wifi_ap.sh
 ```
 
-After login (boot order):
+**Boot after login** — MAVProxy and widget start **in parallel** (no waits between them):
 
-1. `drone-hotspot.service` — Wi-Fi AP (`MantaAP`, `192.168.54.1/24`) + `hostapd`
-2. `autostart-gcs.sh` — MAVProxy when `hostapd` is active; waits for link on **14552**
-3. `mav-widget.service` — overlay top-right; `ExecStartPre` sleep + `run_widget.sh` wait for MAVProxy
+1. `drone-hotspot.service` — Wi-Fi AP + `hostapd` (at boot)
+2. `mavproxy-gcs.service` — MAVProxy when `hostapd` is up (`--force-connected` keeps it running before the drone link is up)
+3. `mav-widget.service` — overlay immediately; telemetry connects when MAVProxy/drone are ready
 
-Install system scripts after changing `autostart-gcs.sh`:
+Typical time to overlay: **under 1 s** after graphical session.
+
+Install or update system scripts:
 
 ```bash
-sudo install -m 755 scripts/autostart-gcs.sh /usr/local/bin/autostart-gcs.sh
-sudo install -m 755 scripts/wait_mavproxy_link.sh /usr/local/bin/wait_mavproxy_link.sh
-systemctl --user restart mav-widget
+sudo ./setup_autostart.sh
+sudo install -m 755 scripts/start_mavproxy.sh /usr/local/bin/start_mavproxy.sh
+sudo install -m 755 scripts/wait_gcs_ready.sh /usr/local/bin/wait_gcs_ready.sh
+systemctl --user restart mavproxy-gcs mav-widget
 ```
+
+Useful commands:
+
+```bash
+systemctl --user status mavproxy-gcs mav-widget
+mav-gcs-logs.sh -f                 # follow log files
+tail -f ~/.local/state/mav-gcs/mav-widget.log
+```
+
+> **Logs:** On some systems `journalctl --user` returns `No journal files were found` — user journal is not persisted. Use `systemctl --user status` (shows recent lines), `mav-gcs-logs.sh`, or `journalctl -b | grep run_widget`.
 
 ---
 

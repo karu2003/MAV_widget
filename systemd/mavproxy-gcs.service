@@ -1,0 +1,18 @@
+[Unit]
+Description=MAVProxy GCS relay (drone master + QGC/widget outputs)
+After=graphical-session.target network-online.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_DIR__
+ExecStartPre=-__PROJECT_DIR__/scripts/wait_gcs_ready.sh hostapd 15
+ExecStart=__PROJECT_DIR__/scripts/start_mavproxy.sh
+StandardOutput=append:__LOG_DIR__/mavproxy-gcs.log
+StandardError=append:__LOG_DIR__/mavproxy-gcs.log
+Restart=on-failure
+RestartSec=5
+TimeoutStartSec=30
+
+[Install]
+WantedBy=graphical-session.target

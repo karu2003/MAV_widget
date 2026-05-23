@@ -1,10 +1,11 @@
 #!/bin/bash
-# Install MAV Widget as a systemd user service (autostart on desktop login).
+# Install MAVProxy + widget as systemd user services (autostart on desktop login).
 
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SERVICE_NAME="mav-widget.service"
+MAVPROXY_SERVICE="mavproxy-gcs.service"
+WIDGET_SERVICE="mav-widget.service"
 
 if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
     TARGET_USER="${SUDO_USER}"
@@ -15,22 +16,50 @@ fi
 TARGET_HOME="$(getent passwd "${TARGET_USER}" | cut -d: -f6)"
 TARGET_UID="$(id -u "${TARGET_USER}")"
 USER_UNIT_DIR="${TARGET_HOME}/.config/systemd/user"
-INSTALLED_UNIT="${USER_UNIT_DIR}/${SERVICE_NAME}"
+LOG_DIR="${TARGET_HOME}/.local/state/mav-gcs"
 
-echo "=== MAV Widget autostart setup ==="
+echo "=== MAV GCS autostart setup ==="
 echo "Project: ${PROJECT_DIR}"
 echo "User:    ${TARGET_USER}"
 
-chmod +x "${PROJECT_DIR}/scripts/run_widget.sh" "${PROJECT_DIR}/scripts/autostart-gcs.sh"
+chmod +x \
+    "${PROJECT_DIR}/scripts/run_widget.sh" \
+    "${PROJECT_DIR}/scripts/autostart-gcs.sh" \
+    "${PROJECT_DIR}/scripts/start_mavproxy.sh" \
+    "${PROJECT_DIR}/scripts/wait_gcs_ready.sh" \
+    "${PROJECT_DIR}/scripts/wait_mavproxy_link.sh" \
+    "${PROJECT_DIR}/scripts/logs.sh"
+
+mkdir -p "${LOG_DIR}"
+chown "${TARGET_USER}:${TARGET_USER}" "${LOG_DIR}"
+echo "Log dir: ${LOG_DIR}"
 
 install -m 755 "${PROJECT_DIR}/scripts/autostart-gcs.sh" /usr/local/bin/autostart-gcs.sh
-echo "Installed: /usr/local/bin/autostart-gcs.sh"
+install -m 755 "${PROJECT_DIR}/scripts/start_mavproxy.sh" /usr/local/bin/start_mavproxy.sh
+install -m 755 "${PROJECT_DIR}/scripts/wait_gcs_ready.sh" /usr/local/bin/wait_gcs_ready.sh
+install -m 755 "${PROJECT_DIR}/scripts/logs.sh" /usr/local/bin/mav-gcs-logs.sh
+echo "Installed: /usr/local/bin/{autostart-gcs,start_mavproxy,wait_gcs_ready,mav-gcs-logs}.sh"
 
 mkdir -p "${USER_UNIT_DIR}"
-sed "s|__PROJECT_DIR__|${PROJECT_DIR}|g" \
-    "${PROJECT_DIR}/systemd/mav-widget.service" > "${INSTALLED_UNIT}"
-chown "${TARGET_USER}:${TARGET_USER}" "${INSTALLED_UNIT}"
-echo "Installed: ${INSTALLED_UNIT}"
+for svc in "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}"; do
+    unit="${svc%.service}"
+    sed -e "s|__PROJECT_DIR__|${PROJECT_DIR}|g" -e "s|__LOG_DIR__|${LOG_DIR}|g" \
+        "${PROJECT_DIR}/systemd/${unit}.service" > "${USER_UNIT_DIR}/${svc}"
+    chown "${TARGET_USER}:${TARGET_USER}" "${USER_UNIT_DIR}/${svc}"
+    echo "Installed: ${USER_UNIT_DIR}/${svc}"
+done
+
+# Avoid double MAVProxy start from GNOME autostart (systemd handles boot order).
+DESKTOP="${TARGET_HOME}/.config/autostart/toggle-hotspot.desktop"
+if [[ -f "$DESKTOP" ]]; then
+    if grep -q '^Hidden=' "$DESKTOP"; then
+        sed -i 's/^Hidden=.*/Hidden=true/' "$DESKTOP"
+    else
+        echo "Hidden=true" >> "$DESKTOP"
+    fi
+    chown "${TARGET_USER}:${TARGET_USER}" "$DESKTOP"
+    echo "Disabled duplicate GNOME autostart: $DESKTOP"
+fi
 
 run_user_systemctl() {
     sudo -u "${TARGET_USER}" \
@@ -40,23 +69,19 @@ run_user_systemctl() {
 }
 
 run_user_systemctl daemon-reload
-run_user_systemctl enable "${SERVICE_NAME}"
-
-if run_user_systemctl is-active --quiet "${SERVICE_NAME}"; then
-    run_user_systemctl restart "${SERVICE_NAME}"
-else
-    run_user_systemctl start "${SERVICE_NAME}" || true
-fi
+run_user_systemctl enable "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}"
+run_user_systemctl restart "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}" || true
 
 echo ""
 echo "Status:"
-run_user_systemctl status "${SERVICE_NAME}" --no-pager || true
+run_user_systemctl status "${MAVPROXY_SERVICE}" --no-pager || true
+echo ""
+run_user_systemctl status "${WIDGET_SERVICE}" --no-pager || true
 
 echo ""
-echo "Done. Widget will start automatically on desktop login for user ${TARGET_USER}."
+echo "Done. On login: mavproxy-gcs and mav-widget start in parallel."
 echo ""
 echo "Useful commands (as ${TARGET_USER}, without sudo):"
-echo "  systemctl --user status mav-widget"
-echo "  systemctl --user restart mav-widget"
-echo "  systemctl --user stop mav-widget"
-echo "  journalctl --user -u mav-widget -f"
+echo "  systemctl --user status mavproxy-gcs mav-widget"
+echo "  mav-gcs-logs.sh -f              # log files (~/.local/state/mav-gcs/)"
+echo "  journalctl -b | grep run_widget # if journalctl --user is empty"

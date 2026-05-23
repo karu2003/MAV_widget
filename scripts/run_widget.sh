@@ -13,6 +13,4 @@ if [[ -n "$XAUTH" ]]; then
     export XAUTHORITY="$XAUTH"
 fi
 
-"${PROJECT_DIR}/scripts/wait_mavproxy_link.sh" 14552 60
-
 exec python3 "$PROJECT_DIR/widget.py" "$@"

@@ -1,28 +1,10 @@
 #!/bin/bash
-# Wait until MAVProxy forwards telemetry to the widget port.
+# Wait until MAVProxy forwards telemetry (optional; widget reconnects on its own).
 
 set -euo pipefail
 
 WIDGET_PORT="${1:-14552}"
-MAX_WAIT_S="${2:-90}"
+MAX_WAIT_S="${2:-30}"
 
-echo "[wait-mavlink] Waiting for telemetry on UDP ${WIDGET_PORT} (max ${MAX_WAIT_S}s)..."
-
-for ((elapsed = 0; elapsed < MAX_WAIT_S; elapsed += 2)); do
-    if python3 - <<PY
-from pymavlink import mavutil
-m = mavutil.mavlink_connection("udp:127.0.0.1:${WIDGET_PORT}")
-msg = m.wait_heartbeat(timeout=2)
-if msg and msg.get_srcSystem() > 0:
-    raise SystemExit(0)
-raise SystemExit(1)
-PY
-    then
-        echo "[wait-mavlink] Link OK (${elapsed}s)"
-        exit 0
-    fi
-    sleep 2
-done
-
-echo "[wait-mavlink] Timeout — widget will retry in background"
-exit 0
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+exec "${SCRIPT_DIR}/wait_gcs_ready.sh" heartbeat "$WIDGET_PORT" "$MAX_WAIT_S"

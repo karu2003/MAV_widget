@@ -55,17 +55,18 @@ EOF
 chmod 440 "$SUDOERS_FILE"
 
 # Fix broken GNOME autostart (was executing .desktop file as shell script)
+# MAVProxy is started by mavproxy-gcs.service — keep desktop entry hidden.
 AUTOSTART="/home/ubuntu/.config/autostart/toggle-hotspot.desktop"
 if [[ -f "$AUTOSTART" ]]; then
     cat > "$AUTOSTART" <<'EOF'
 [Desktop Entry]
 Type=Application
 Exec=/usr/local/bin/autostart-gcs.sh
-Hidden=false
-NoDisplay=false
-X-GNOME-Autostart-enabled=true
-Name=GCS MAVProxy
-Comment=Start MAVProxy after login (AP via drone-hotspot.service)
+Hidden=true
+NoDisplay=true
+X-GNOME-Autostart-enabled=false
+Name=GCS MAVProxy (legacy)
+Comment=Use mavproxy-gcs.service — run ./setup_autostart.sh
 EOF
     chown ubuntu:ubuntu "$AUTOSTART"
     echo "Fixed autostart: $AUTOSTART"

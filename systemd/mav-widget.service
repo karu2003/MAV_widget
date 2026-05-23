@@ -6,12 +6,13 @@ PartOf=graphical-session.target
 [Service]
 Type=simple
 WorkingDirectory=__PROJECT_DIR__
-# Let MAVProxy and radio link come up after login
-ExecStartPre=/bin/sleep 20
 ExecStart=__PROJECT_DIR__/scripts/run_widget.sh
+StandardOutput=append:__LOG_DIR__/mav-widget.log
+StandardError=append:__LOG_DIR__/mav-widget.log
 Restart=on-failure
-RestartSec=5
+RestartSec=3
 Environment=DISPLAY=:0
+TimeoutStartSec=15
 
 [Install]
 WantedBy=graphical-session.target

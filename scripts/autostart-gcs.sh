@@ -1,36 +1,28 @@
 #!/bin/bash
-# Post-login autostart: MAVProxy only (AP is started by drone-hotspot.service).
+# Legacy / manual MAVProxy start — prefer: systemctl --user start mavproxy-gcs.service
 
 set -euo pipefail
 
-if ! systemctl is-active --quiet hostapd; then
-    echo "[gcs-autostart] hostapd not active, skipping MAVProxy"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+if systemctl --user is-active --quiet mavproxy-gcs.service 2>/dev/null; then
+    echo "[gcs-autostart] mavproxy-gcs.service already active"
     exit 0
 fi
 
-if pgrep -f "mavproxy.py" >/dev/null; then
+if pgrep -f '[m]avproxy\.py' >/dev/null 2>&1; then
     echo "[gcs-autostart] MAVProxy already running"
     exit 0
 fi
 
-echo "[gcs-autostart] Configuring network for MAVLink..."
-sudo sysctl -w net.ipv4.conf.all.rp_filter=0
-sudo sysctl -w net.ipv4.conf.eth0.rp_filter=0
+if command -v systemctl >/dev/null && systemctl --user list-unit-files mavproxy-gcs.service >/dev/null 2>&1; then
+    echo "[gcs-autostart] Starting mavproxy-gcs.service..."
+    systemctl --user start mavproxy-gcs.service
+    exit 0
+fi
 
-echo "[gcs-autostart] Starting MAVProxy..."
-# Docs: https://ardupilot.org/mavproxy/docs/getting_started/starting.html
-#       https://ardupilot.org/mavproxy/docs/getting_started/forwarding.html
-# --master=udpin: listen for drone on GCS AP (eth0 192.168.53.1)
-# --out 127.0.0.1:14551  forward to QGC (must disable QGC AutoConnect UDP on 14550)
-sudo -u ubuntu HOME=/home/ubuntu python3 /home/ubuntu/.local/bin/mavproxy.py \
-    --master=udpin:192.168.53.1:14550 \
-    --out=127.0.0.1:14551 \
-    --out=127.0.0.1:14552 \
-    --out=udpbcast:192.168.54.255:14550 \
-    --daemon
-
-sleep 3
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/wait_mavproxy_link.sh" 14552 90
-
+echo "[gcs-autostart] Starting MAVProxy (standalone)..."
+"${SCRIPT_DIR}/wait_gcs_ready.sh" hostapd 20
+"${SCRIPT_DIR}/start_mavproxy.sh"
+"${SCRIPT_DIR}/wait_gcs_ready.sh" mavproxy 10
 echo "[gcs-autostart] MAVProxy started"

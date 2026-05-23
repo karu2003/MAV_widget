@@ -103,5 +103,7 @@ mavproxy.py \
     --out=127.0.0.1:14551 \
     --out=127.0.0.1:14552 \
     --out=udpbcast:192.168.54.255:14550 \
-    --daemon
+    --nowait \
+    --force-connected \
+    --non-interactive
 ```
