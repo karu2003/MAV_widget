@@ -157,7 +157,7 @@ def main() -> None:
             log.error("Joystick failed: %s", exc)
 
     root = tk.Tk()
-    root.geometry(f"320x280{args.geometry}")
+    root.geometry(f"210x280{args.geometry}")
     widget = TelemetryWidget(root, state, rc_via_mavproxy=args.no_joystick)
 
     def shutdown(_signum=None, _frame=None) -> None:
