@@ -37,11 +37,10 @@ AXIS_MAP = {
 INPUT_DEVICE = None
 JOYSTICK_NAME = "Winmate GCS Joystick"
 
-# MAVLink via MAVProxy output (telemetry only — separate port from QGC)
-MAVLINK_URI = "udp:127.0.0.1:14552"
+# Direct link to drone (same as MAVProxy master). QGC uses 14551 via MAVProxy.
+MAVLINK_URI = "udp:192.168.53.1:14550"
 MAVPROXY_MASTER = "192.168.53.1:14550"
 QGC_PORT = 14551
-WIDGET_PORT = 14552
 
 # Axes with inverted up/down (evdev value flipped before PWM)
 AXIS_INVERT = {
@@ -49,7 +48,7 @@ AXIS_INVERT = {
     "ABS_RX": True,  # right stick Y (throttle)
 }
 
-# Send RC override through MAVProxy (same link as telemetry)
+# RC on the same link as telemetry (direct to drone, 11 channels)
 RC_MAVLINK_URI = None
 
 # All stick + button channels (1-11)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import logging
 import threading
 import time
@@ -115,13 +116,10 @@ class MavlinkLink:
             self._master.target_component,
         )
         self._target_system = self._master.target_system
-        if self._master.target_component:
-            self._target_component = self._master.target_component
-        else:
-            self._target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
+        self._target_component = mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
 
         if self.rc_uri and self.rc_uri != self.uri:
-            log.info("Connecting to RC override link: %s", self.rc_uri)
+            log.info("RC override link: %s", self.rc_uri)
             self._rc_master = mavutil.mavlink_connection(self.rc_uri)
 
         log.info("RC override target sys=%s comp=%s", self._target_system, self._target_component)
@@ -196,6 +194,11 @@ class MavlinkLink:
                 alt_m=msg.alt,
             )
 
+    def _override_channel_count(self, link) -> int:
+        sig = inspect.signature(link.mav.rc_channels_override_send)
+        max_ch = len(sig.parameters) - 2  # exclude self, target_system, target_component
+        return min(RC_OVERRIDE_CHANNELS, max_ch)
+
     def _tx_loop(self) -> None:
         assert self._master is not None
         interval = 1.0 / RC_RATE_HZ
@@ -203,7 +206,10 @@ class MavlinkLink:
             _, joy_ok, _, axis_values, button_pressed, rc_active = self.state.snapshot()
             if joy_ok and rc_active:
                 channels = build_rc_channels(axis_values, button_pressed)
-                self._send_rc_override(channels)
+                try:
+                    self._send_rc_override(channels)
+                except Exception:
+                    log.exception("RC override send failed")
             time.sleep(interval)
 
     def _send_rc_override(self, channels: list[int]) -> None:
@@ -211,8 +217,9 @@ class MavlinkLink:
         if link is None:
             return
         padded = channels + [RC_IGNORE] * (RC_CHANNELS - len(channels))
+        count = self._override_channel_count(link)
         link.mav.rc_channels_override_send(
             self._target_system,
             self._target_component,
-            *padded[:RC_OVERRIDE_CHANNELS],
+            *padded[:count],
         )
