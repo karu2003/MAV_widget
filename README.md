@@ -84,6 +84,8 @@ Winmate GCS Joystick layout (verified manually):
 | Right top (`BTN_TL`) | 9 |
 | Right bottom (`BTN_TR`) | 10 |
 | Right side (`BTN_Z`) | 11 |
+| Left stick press (`BTN_A`) | 12 |
+| Right stick press (`BTN_B`) | 13 |
 
 Vertical axes (`ABS_Y`, `ABS_RX`) are inverted in software — see `AXIS_INVERT` in `config.py`.
 
@@ -183,7 +185,7 @@ evdev>=1.7.0
       │ /dev/input/eventX
       ▼
 [widget.py + joystick_reader.py]   50 Hz RC override
-      │ RC_CHANNELS_OVERRIDE (#70), 11 channels
+      │ RC_CHANNELS_OVERRIDE (#70), 13 channels
       ▼
 [widget.py]  udp:192.168.53.1:14550  (telemetry + RC override, 11 ch)
 [MAVProxy]    udp:127.0.0.1:14551     (QGC listen)

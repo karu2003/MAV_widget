@@ -15,6 +15,8 @@ BUTTON_MAP = {
     "BTN_TL": "right top",
     "BTN_TR": "right bottom",
     "BTN_Z": "right side",
+    "BTN_A": "left stick press",
+    "BTN_B": "right stick press",
 }
 
 # Human-readable axis names
@@ -51,8 +53,8 @@ AXIS_INVERT = {
 # RC on the same link as telemetry (direct to drone, 11 channels)
 RC_MAVLINK_URI = None
 
-# All stick + button channels (1-11)
-RC_OVERRIDE_CHANNELS = 11
+# All stick + button channels (1-13)
+RC_OVERRIDE_CHANNELS = 13
 
 # RC channel assignment (channel -> role, evdev axis)
 RC_CHANNEL_MAP = {
@@ -71,6 +73,8 @@ RC_BUTTON_MAP = {
     9: "BTN_TL",
     10: "BTN_TR",
     11: "BTN_Z",
+    12: "BTN_A",
+    13: "BTN_B",
 }
 
 BUTTON_PWM_OFF = 1000
