@@ -37,9 +37,11 @@ AXIS_MAP = {
 INPUT_DEVICE = None
 JOYSTICK_NAME = "Winmate GCS Joystick"
 
-# MAVLink via MAVProxy output (telemetry only)
-MAVLINK_URI = "udp:127.0.0.1:14551"
+# MAVLink via MAVProxy output (telemetry only — separate port from QGC)
+MAVLINK_URI = "udp:127.0.0.1:14552"
 MAVPROXY_MASTER = "192.168.53.1:14550"
+QGC_PORT = 14551
+WIDGET_PORT = 14552
 
 # Axes with inverted up/down (evdev value flipped before PWM)
 AXIS_INVERT = {
@@ -80,7 +82,6 @@ RC_CHANNELS = 18
 # UDP ports (legacy / direct)
 ARDUPILOT_HOST = "192.168.1.10"
 ARDUPILOT_PORT = 14550
-QGC_PORT = 14551
 
 # RC failsafe (neutral)
 FAILSAFE_PWM = 1500

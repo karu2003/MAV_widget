@@ -18,7 +18,7 @@ Background service and overlay widget: Winmate GCS joystick → `RC_CHANNELS_OVE
 
 ```
 /dev/input/eventX  →  widget.py / joystick_reader.py  →  RC_CHANNELS_OVERRIDE (50 Hz)  →  MAVProxy  →  ArduPilot
-ArduPilot          →  MAVProxy :14551                   →  widget.py (telemetry overlay)
+ArduPilot          →  MAVProxy :14551 (QGC) / :14552 (widget)  →  clients
 ```
 
 ---
@@ -53,7 +53,7 @@ MAV_widget/
 
 ### widget.py
 
-Main application. Connects to MAVProxy telemetry on `udp:127.0.0.1:14551`, opens the joystick, and shows a compact overlay window.
+Main application. Connects to MAVProxy telemetry on `udp:127.0.0.1:14552`, opens the joystick, and shows a compact overlay window. QGC uses port **14551** separately to avoid UDP conflicts.
 
 ### joystick_reader.py
 
@@ -124,11 +124,12 @@ python3 widget.py --device /dev/input/event9
 python3 ~/.local/bin/mavproxy.py \
     --master=udp:192.168.53.1:14550 \
     --out=udp:0.0.0.0:14551 \
+    --out=udp:127.0.0.1:14552 \
     --out=udp:192.168.54.255:14550 \
     --daemon
 ```
 
-The widget connects to `udp:127.0.0.1:14551`. Disable the joystick in QGC — RC control goes through this widget.
+The widget connects to `udp:127.0.0.1:14552`. QGC connects to **UDP 14551**. Disable the joystick in QGC — RC control goes through this widget.
 
 ---
 
@@ -176,7 +177,7 @@ evdev>=1.7.0
 [widget.py + joystick_reader.py]   50 Hz RC override
       │ RC_CHANNELS_OVERRIDE (#70), 11 channels
       ▼
-[MAVProxy]  udp:127.0.0.1:14551
+[MAVProxy]  udp:127.0.0.1:14552 (widget) / udp:0.0.0.0:14551 (QGC)
       │
       ▼
 [ArduPilot / Pixhawk]  via radio link (192.168.53.1:14550)
