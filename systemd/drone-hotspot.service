@@ -1,0 +1,14 @@
+[Unit]
+Description=Drone WiFi AP (uap0 + hostapd + dnsmasq)
+After=NetworkManager.service network-online.target
+Wants=network-online.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/start-drone-hotspot.sh
+ExecStop=/usr/local/bin/stop-drone-hotspot.sh
+
+[Install]
+WantedBy=multi-user.target
