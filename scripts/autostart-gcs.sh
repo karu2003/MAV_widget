@@ -18,10 +18,19 @@ sudo sysctl -w net.ipv4.conf.all.rp_filter=0
 sudo sysctl -w net.ipv4.conf.eth0.rp_filter=0
 
 echo "[gcs-autostart] Starting MAVProxy..."
+# Docs: https://ardupilot.org/mavproxy/docs/getting_started/starting.html
+#       https://ardupilot.org/mavproxy/docs/getting_started/forwarding.html
+# --master=udpin: listen for drone on GCS AP (eth0 192.168.53.1)
+# --out 127.0.0.1:14551  forward to QGC (must disable QGC AutoConnect UDP on 14550)
 sudo -u ubuntu HOME=/home/ubuntu python3 /home/ubuntu/.local/bin/mavproxy.py \
-    --master=udp:192.168.53.1:14550 \
-    --out=udp:127.0.0.1:14551 \
-    --out=udp:192.168.54.255:14550 \
+    --master=udpin:192.168.53.1:14550 \
+    --out=127.0.0.1:14551 \
+    --out=127.0.0.1:14552 \
+    --out=udpbcast:192.168.54.255:14550 \
     --daemon
+
+sleep 3
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"${SCRIPT_DIR}/wait_mavproxy_link.sh" 14552 90
 
 echo "[gcs-autostart] MAVProxy started"

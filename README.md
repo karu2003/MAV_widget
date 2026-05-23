@@ -18,8 +18,9 @@ Background service and overlay widget: Winmate GCS joystick → `RC_CHANNELS_OVE
 
 ```
 /dev/input/eventX  →  widget.py / joystick_reader.py  →  RC_CHANNELS_OVERRIDE (50 Hz)  →  MAVProxy  →  ArduPilot
-ArduPilot :14550  →  widget.py (telemetry + RC)     direct
-                 →  MAVProxy :14551                 →  QGC
+ArduPilot :14550  →  MAVProxy only (master)
+                    ├─ 14551 → QGC
+                    └─ 14552 → widget (telemetry + RC)
 ```
 
 ---
@@ -54,7 +55,7 @@ MAV_widget/
 
 ### widget.py
 
-Main application. Connects directly to the drone on `udp:192.168.53.1:14550` for telemetry and RC override. QGC uses port **14551** via MAVProxy — separate port, no conflict.
+Main application. Connects to MAVProxy on `udp:127.0.0.1:14552` for telemetry and RC. Port **14550** is MAVProxy master only — do not point the widget or QGC at it.
 
 ### joystick_reader.py
 
@@ -127,11 +128,12 @@ python3 widget.py --device /dev/input/event9
 python3 ~/.local/bin/mavproxy.py \
     --master=udp:192.168.53.1:14550 \
     --out=udp:127.0.0.1:14551 \
+    --out=udp:127.0.0.1:14552 \
     --out=udp:192.168.54.255:14550 \
     --daemon
 ```
 
-The widget connects directly to `udp:192.168.53.1:14550`. **QGC must listen on UDP port 14551** (not 14550). Disable the joystick in QGC — RC control goes through this widget.
+The widget uses `udp:127.0.0.1:14552`. **QGC must listen on UDP 14551 only.** Remove any QGC link on port 14550 — it steals the drone port from MAVProxy.
 
 ### QGC connection settings
 
@@ -139,7 +141,7 @@ The widget connects directly to `udp:192.168.53.1:14550`. **QGC must listen on U
 |---|---|
 | Type | UDP |
 | Port | **14551** (Listen) |
-| Do NOT use | port 14550 in QGC (conflicts with drone link) |
+| **Disable** | any UDP link on port **14550** in QGC |
 
 ---
 
@@ -187,8 +189,8 @@ evdev>=1.7.0
 [widget.py + joystick_reader.py]   50 Hz RC override
       │ RC_CHANNELS_OVERRIDE (#70), 13 channels
       ▼
-[widget.py]  udp:192.168.53.1:14550  (telemetry + RC override, 11 ch)
-[MAVProxy]    udp:127.0.0.1:14551     (QGC listen)
+[widget.py]  udp:127.0.0.1:14552  (via MAVProxy)
+[MAVProxy]    udp:127.0.0.1:14551  (QGC)
       │
       ▼
 [ArduPilot / Pixhawk]  via radio link (192.168.53.1:14550)
