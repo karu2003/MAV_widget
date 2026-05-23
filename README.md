@@ -124,12 +124,20 @@ python3 widget.py --device /dev/input/event9
 ```bash
 python3 ~/.local/bin/mavproxy.py \
     --master=udp:192.168.53.1:14550 \
-    --out=udp:0.0.0.0:14551 \
+    --out=udp:127.0.0.1:14551 \
     --out=udp:192.168.54.255:14550 \
     --daemon
 ```
 
-The widget connects directly to `udp:192.168.53.1:14550`. QGC connects to **UDP 14551** via MAVProxy. Disable the joystick in QGC — RC control goes through this widget.
+The widget connects directly to `udp:192.168.53.1:14550`. **QGC must listen on UDP port 14551** (not 14550). Disable the joystick in QGC — RC control goes through this widget.
+
+### QGC connection settings
+
+| Setting | Value |
+|---|---|
+| Type | UDP |
+| Port | **14551** (Listen) |
+| Do NOT use | port 14550 in QGC (conflicts with drone link) |
 
 ---
 
@@ -178,7 +186,7 @@ evdev>=1.7.0
       │ RC_CHANNELS_OVERRIDE (#70), 11 channels
       ▼
 [widget.py]  udp:192.168.53.1:14550  (telemetry + RC override, 11 ch)
-[MAVProxy]    udp:0.0.0.0:14551       (QGC only)
+[MAVProxy]    udp:127.0.0.1:14551     (QGC listen)
       │
       ▼
 [ArduPilot / Pixhawk]  via radio link (192.168.53.1:14550)

@@ -20,7 +20,7 @@ sudo sysctl -w net.ipv4.conf.eth0.rp_filter=0
 echo "[gcs-autostart] Starting MAVProxy..."
 sudo -u ubuntu HOME=/home/ubuntu python3 /home/ubuntu/.local/bin/mavproxy.py \
     --master=udp:192.168.53.1:14550 \
-    --out=udp:0.0.0.0:14551 \
+    --out=udp:127.0.0.1:14551 \
     --out=udp:192.168.54.255:14550 \
     --daemon
 
