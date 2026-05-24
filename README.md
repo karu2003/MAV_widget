@@ -41,6 +41,7 @@ MAV_widget/
 │   ├── MAVPROXY_QGC.md    # MAVProxy + QGC port setup and troubleshooting
 │   ├── AP_CLIENTS.md      # MAVLink + RTSP for Wi‑Fi AP clients
 │   └── SECRETS.md         # what must not be committed (passwords, keys)
+├── INSTALL.md             # full GCS installation (network, AP, concurrent Wi‑Fi)
 ├── scripts/
 │   ├── run_widget.sh           # launch widget immediately (no MAVProxy wait)
 │   ├── start_mavproxy.sh       # start MAVProxy daemon
@@ -121,6 +122,12 @@ Winmate GCS Joystick layout (verified manually):
 | Right stick press (`BTN_B`) | 13 |
 
 Vertical axes (`ABS_Y`, `ABS_RX`) are inverted in software — see `AXIS_INVERT` in `config.py`.
+
+---
+
+## Installation
+
+Full GCS setup (network, concurrent Wi‑Fi + AP, MAVProxy, widget, autostart): **[INSTALL.md](INSTALL.md)**
 
 ---
 

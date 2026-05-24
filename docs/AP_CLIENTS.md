@@ -89,7 +89,7 @@ AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone rad
 
 ```
 phy#0  one channel only (#channels <= 1)
-  wlan0  managed  →  router (e.g. Vodafone ch11)  — internet
+  wlan0  managed  →  router (e.g. Coco ch11)  — internet
   uap0   AP       →  CaimanHS                     — phones
 ```
 
@@ -115,7 +115,7 @@ GCS_WLAN_CONNECTION=Coco
 
 ### Boot / AP on sequence
 
-1. Connect **wlan0** to any saved profile (Coco, Vodafone, …).
+1. Connect **wlan0** to any saved profile (Coco, …).
 2. Read channel + band → configure **hostapd** (`hw_mode` + `channel`).
 3. Start **uap0** AP.
 4. Reconnect **wlan0** on the same channel if it dropped.
