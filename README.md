@@ -47,7 +47,8 @@ MAV_widget/
 │   ├── autostart-gcs.sh        # manual / legacy → mavproxy-gcs.service
 │   ├── toggle-screen-lock.sh   # kiosk mode on/off
 │   ├── start-drone-hotspot.sh
-│   └── stop-drone-hotspot.sh
+│   ├── stop-drone-hotspot.sh
+│   └── toggle-ap.sh            # GNOME on/off (drone-hotspot.service)
 ├── systemd/
 │   ├── mavproxy-gcs.service    # MAVProxy on login (independent of widget)
 │   ├── mav-widget.service
@@ -224,6 +225,16 @@ sudo ./setup_wifi_ap.sh    # AP + NAT rules
 ./scripts/check-nat.sh     # from repo (or check-nat.sh after sudo ./setup_autostart.sh)
 sudo ./scripts/setup-nat.sh
 ```
+
+### GNOME: toggle AP on/off
+
+After `setup_wifi_ap.sh`:
+
+- Application menu: **GCS Wi-Fi AP**
+- Desktop icon: **gcs-toggle-ap.desktop**
+- Terminal: `toggle-ap.sh`
+
+Uses `drone-hotspot.service` (not GNOME Settings → Hotspot). Optional keyboard shortcut: **Settings → Keyboard → Custom** → `toggle-ap.sh`.
 
 AP clients get gateway `192.168.54.1` via dnsmasq. Devices on `192.168.53.x` need **static default gateway `192.168.53.1`** on the radio side.
 

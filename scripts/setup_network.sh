@@ -8,7 +8,18 @@ if [[ "${EUID}" -ne 0 ]]; then
     exit 1
 fi
 
-PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if [[ -n "${MAV_WIDGET_DIR:-}" ]]; then
+    PROJECT_DIR="${MAV_WIDGET_DIR}"
+else
+    PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+fi
+if [[ ! -d "${PROJECT_DIR}/config" && -d /home/ubuntu/MAV_widget/config ]]; then
+    PROJECT_DIR=/home/ubuntu/MAV_widget
+fi
+if [[ ! -d "${PROJECT_DIR}/config" ]]; then
+    echo "Config not found — set MAV_WIDGET_DIR=/path/to/MAV_widget" >&2
+    exit 1
+fi
 CONFIG="${PROJECT_DIR}/config"
 
 log() { echo "[setup-network] $*"; }

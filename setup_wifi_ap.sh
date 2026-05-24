@@ -14,6 +14,13 @@ INSTALL_BIN="/usr/local/bin"
 SYSTEMD_DIR="/etc/systemd/system"
 SUDOERS_FILE="/etc/sudoers.d/mav-widget-hotspot"
 
+if [[ -n "${SUDO_USER:-}" ]]; then
+    DESKTOP_USER="${SUDO_USER}"
+else
+    DESKTOP_USER="$(whoami)"
+fi
+DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
+
 echo "=== Drone WiFi AP setup ==="
 echo "Project: $PROJECT_DIR"
 
@@ -25,11 +32,22 @@ install -m 755 "$PROJECT_DIR/scripts/setup_network.sh" "$INSTALL_BIN/setup-netwo
 install -m 755 "$PROJECT_DIR/scripts/ensure_network.sh" "$INSTALL_BIN/ensure-network.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-network.sh" "$INSTALL_BIN/check-network.sh"
 install -m 755 "$PROJECT_DIR/scripts/autostart-gcs.sh" "$INSTALL_BIN/autostart-gcs.sh"
+install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
+install -m 644 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" /usr/share/applications/gcs-toggle-ap.desktop
+mkdir -p "${DESKTOP_HOME}/Desktop"
+install -m 755 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
+chown "${DESKTOP_USER}:${DESKTOP_USER}" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
+# GNOME treats ~/Desktop/*.desktop as untrusted until executable + trusted metadata.
+if command -v gio >/dev/null 2>&1; then
+    sudo -u "${DESKTOP_USER}" gio set "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop" metadata::trusted true 2>/dev/null || true
+fi
+echo "GNOME launcher: /usr/share/applications/gcs-toggle-ap.desktop"
+echo "Desktop icon:     ${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
 
 mkdir -p /etc/dnsmasq.d
 install -m 644 "$PROJECT_DIR/config/dnsmasq-drone-hotspot.conf" /etc/dnsmasq.d/drone-hotspot.conf
 
-"$INSTALL_BIN/setup-network.sh"
+MAV_WIDGET_DIR="$PROJECT_DIR" "$PROJECT_DIR/scripts/setup_network.sh"
 
 sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     "$PROJECT_DIR/systemd/drone-hotspot.service" > "$SYSTEMD_DIR/drone-hotspot.service"
@@ -54,6 +72,10 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/setup-nat.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/check-nat.sh
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/iptables
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart drone-hotspot.service
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/iw
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/ip
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/sysctl
@@ -99,6 +121,7 @@ echo "  AP SSID: MantaAP  IP: 192.168.54.1"
 echo "  Client WiFi: wlan0 (NetworkManager)"
 echo ""
 echo "Commands:"
+echo "  toggle-ap.sh              # GNOME: app menu / desktop icon"
 echo "  systemctl status drone-hotspot"
 echo "  systemctl restart drone-hotspot"
 echo "  journalctl -u drone-hotspot -u hostapd -u dnsmasq -b"

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=GCS Wi-Fi AP
+Name[ru]=GCS Wi‑Fi AP
+Comment=Toggle drone hotspot (hostapd on uap0)
+Comment[ru]=Включить/выключить AP дрона (192.168.54.1)
+Exec=/usr/local/bin/toggle-ap.sh
+Icon=network-wireless
+Terminal=false
+Categories=Network;System;
