@@ -1,5 +1,5 @@
 #!/bin/bash
-# Restart MAVProxy + RTSP after uap0 is up (called from drone-hotspot).
+# Restart MAVProxy + ensure video services run (non-blocking — safe at boot).
 
 set -euo pipefail
 
@@ -13,12 +13,9 @@ if ip link show uap0 &>/dev/null; then
     sysctl -w net.ipv4.conf.uap0.rp_filter=0 >/dev/null 2>&1 || true
 fi
 
-if systemctl is-enabled gcs-video-rtsp.service &>/dev/null; then
-    systemctl restart gcs-video-rtsp.service 2>/dev/null || systemctl start gcs-video-rtsp.service 2>/dev/null || true
-elif [[ -x /usr/local/bin/start-video-rtsp.sh ]]; then
-    pkill -f '[f]fmpeg.*rtsp.*8554' 2>/dev/null || true
-    nohup /usr/local/bin/start-video-rtsp.sh >>/var/log/gcs-video-rtsp.log 2>&1 &
-fi
+# Do not "restart" here — systemctl restart can block drone-hotspot for ~90s at boot.
+systemctl start --no-block gcs-video-udp-relay.service 2>/dev/null || true
+systemctl start --no-block gcs-video-rtsp.service 2>/dev/null || true
 
 if [[ -d "$RUNTIME" ]] && sudo -u "$GCS_USER" \
     XDG_RUNTIME_DIR="$RUNTIME" DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
@@ -26,9 +23,9 @@ if [[ -d "$RUNTIME" ]] && sudo -u "$GCS_USER" \
     log "Restarting mavproxy-gcs (AP MAVLink outputs)"
     sudo -u "$GCS_USER" \
         XDG_RUNTIME_DIR="$RUNTIME" DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
-        systemctl --user restart mavproxy-gcs.service || log "WARN: mavproxy restart failed"
+        systemctl --user restart mavproxy-gcs.service &
 else
-    log "mavproxy-gcs not active (skip)"
+    log "mavproxy-gcs not active yet (skip)"
 fi
 
 log "Done"

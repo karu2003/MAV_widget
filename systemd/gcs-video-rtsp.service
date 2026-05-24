@@ -1,8 +1,7 @@
 [Unit]
 Description=GCS RTSP video relay for Wi-Fi AP clients
-After=network-online.target gcs-video-udp-relay.service
+After=network-online.target drone-hotspot.service gcs-video-udp-relay.service
 Wants=network-online.target gcs-video-udp-relay.service
-PartOf=drone-hotspot.service
 
 [Service]
 Type=simple
@@ -10,6 +9,8 @@ EnvironmentFile=-/etc/default/gcs-ap-streaming
 ExecStart=/usr/local/bin/start-video-rtsp.sh
 Restart=on-failure
 RestartSec=5
+TimeoutStopSec=10
+KillMode=mixed
 StandardOutput=journal
 StandardError=journal
 

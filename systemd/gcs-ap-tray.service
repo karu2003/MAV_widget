@@ -1,0 +1,13 @@
+[Unit]
+Description=GCS Wi-Fi AP tray indicator
+After=graphical-session.target
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/gcs-ap-tray.py
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=graphical-session.target

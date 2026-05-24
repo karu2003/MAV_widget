@@ -50,7 +50,9 @@ MAV_widget/
 │   ├── toggle-screen-lock.sh   # kiosk mode on/off
 │   ├── start-drone-hotspot.sh
 │   ├── stop-drone-hotspot.sh
-│   ├── toggle-ap.sh            # GNOME on/off (drone-hotspot.service)
+│   ├── toggle-ap.sh            # AP on/off (called by tray)
+│   ├── gcs-ap-tray.py          # top panel tray icon
+│   ├── install-ap-tray.sh      # install tray + toggle only
 │   ├── video-udp-relay.py      # eth0:5600 → 127.0.0.1:5601 (RTP copy)
 │   ├── start-video-rtsp.sh     # MediaMTX + ffmpeg RTP → RTSP on AP
 │   ├── check-ap-stream.sh      # verify AP MAVLink + video relay
@@ -239,11 +241,10 @@ sudo ./scripts/setup-nat.sh
 
 After `setup_wifi_ap.sh`:
 
-- Application menu: **GCS Wi-Fi AP**
-- Desktop icon: **gcs-toggle-ap.desktop**
+- **Tray icon** in the top panel (`gcs-ap-tray`) — right-click: on/off, settings
 - Terminal: `toggle-ap.sh`
 
-Uses `drone-hotspot.service` (not GNOME Settings → Hotspot). Optional keyboard shortcut: **Settings → Keyboard → Custom** → `toggle-ap.sh`.
+Uses `drone-hotspot.service` (not GNOME Settings → Hotspot).
 
 AP clients get gateway `192.168.54.1` via dnsmasq. Devices on `192.168.53.x` need **static default gateway `192.168.53.1`** on the radio side.
 

@@ -1,8 +1,7 @@
 [Unit]
 Description=Copy drone H.264 UDP :5600 to localhost for AP RTSP relay
-After=network.target
+After=network.target drone-hotspot.service
 Before=gcs-video-rtsp.service
-PartOf=drone-hotspot.service
 
 [Service]
 Type=simple

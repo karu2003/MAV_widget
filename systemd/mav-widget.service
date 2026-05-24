@@ -1,18 +1,20 @@
 [Unit]
 Description=MAV Widget telemetry overlay
-After=graphical-session.target
+After=graphical-session.target mavproxy-gcs.service network-online.target
+Wants=mavproxy-gcs.service
 PartOf=graphical-session.target
 
 [Service]
 Type=simple
 WorkingDirectory=__PROJECT_DIR__
+ExecStartPre=-__PROJECT_DIR__/scripts/wait_gcs_ready.sh mavproxy 45
 ExecStart=__PROJECT_DIR__/scripts/run_widget.sh
 StandardOutput=append:__LOG_DIR__/mav-widget.log
 StandardError=append:__LOG_DIR__/mav-widget.log
 Restart=on-failure
 RestartSec=3
 Environment=DISPLAY=:0
-TimeoutStartSec=15
+TimeoutStartSec=60
 
 [Install]
 WantedBy=graphical-session.target

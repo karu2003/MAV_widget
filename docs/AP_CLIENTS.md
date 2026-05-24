@@ -82,3 +82,16 @@ VLC on a phone: same URL (`ffplay -rtsp_transport tcp …` on the GCS may show 4
 | Video relay (local) | 5601/udp | 127.0.0.1 (ffmpeg RTP ingest) |
 
 AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone radio subnet **192.168.53.0/24** is forwarded between `uap0` and `eth0`.
+
+## Concurrent AP + wlan0 client
+
+The GCS uses **uap0** (AP for phones) and **wlan0** (internet uplink) on the same radio. After boot, `restore-wlan-client.sh` reconnects wlan0 via NetworkManager.
+
+Set your home/office Wi‑Fi profile in `/etc/default/gcs-ap-streaming`:
+
+```bash
+GCS_WLAN_CONNECTION=Coco
+```
+
+(Use `nmcli connection show` to list profiles; do not use the AP SSID from hostapd.)
+

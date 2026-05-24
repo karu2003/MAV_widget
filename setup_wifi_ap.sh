@@ -33,25 +33,111 @@ install -m 755 "$PROJECT_DIR/scripts/ensure_network.sh" "$INSTALL_BIN/ensure-net
 install -m 755 "$PROJECT_DIR/scripts/check-network.sh" "$INSTALL_BIN/check-network.sh"
 install -m 755 "$PROJECT_DIR/scripts/autostart-gcs.sh" "$INSTALL_BIN/autostart-gcs.sh"
 install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
+install -m 755 "$PROJECT_DIR/scripts/gcs-ap-manual-off.sh" "$INSTALL_BIN/gcs-ap-manual-off.sh"
+install -m 755 "$PROJECT_DIR/scripts/stop-ap-user.sh" "$INSTALL_BIN/stop-ap-user.sh"
+install -m 755 "$PROJECT_DIR/scripts/install-ap-tray.sh" "$INSTALL_BIN/install-ap-tray.sh"
+ICON_DIR="/usr/local/share/icons/hicolor/scalable/apps"
+PNG_DIR="/usr/local/share/icons/hicolor/48x48/apps"
+mkdir -p "$ICON_DIR" "$PNG_DIR"
+install -m 644 "$PROJECT_DIR/config/icons/gcs-ap-on.svg" "${ICON_DIR}/gcs-ap-on.svg"
+install -m 644 "$PROJECT_DIR/config/icons/gcs-ap-off.svg" "${ICON_DIR}/gcs-ap-off.svg"
+if command -v ffmpeg >/dev/null; then
+    ffmpeg -y -loglevel error -i "${ICON_DIR}/gcs-ap-on.svg" -vf scale=48:48 "${PNG_DIR}/gcs-ap-on.png" 2>/dev/null || true
+    ffmpeg -y -loglevel error -i "${ICON_DIR}/gcs-ap-off.svg" -vf scale=48:48 "${PNG_DIR}/gcs-ap-off.png" 2>/dev/null || true
+fi
+install -m 644 "$PROJECT_DIR/config/icons/hicolor-index.theme" /usr/local/share/icons/hicolor/index.theme
+if command -v gtk-update-icon-cache >/dev/null; then
+    gtk-update-icon-cache -f /usr/local/share/icons/hicolor 2>/dev/null || true
+fi
 install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-video-rtsp.sh"
+install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
 install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
+install -m 755 "$PROJECT_DIR/scripts/check-gcs-link.sh" "$INSTALL_BIN/check-gcs-link.sh"
+install -m 755 "$PROJECT_DIR/scripts/configure-wlan-client.sh" "$INSTALL_BIN/configure-wlan-client.sh"
 install -m 755 "$PROJECT_DIR/scripts/install-mediamtx.sh" "$INSTALL_BIN/install-mediamtx.sh"
 install -m 755 "$PROJECT_DIR/scripts/video-udp-relay.py" "$INSTALL_BIN/video-udp-relay.py"
 install -m 644 "$PROJECT_DIR/systemd/gcs-video-udp-relay.service" "$SYSTEMD_DIR/gcs-video-udp-relay.service"
-install -m 644 "$PROJECT_DIR/config/gcs-ap-streaming.conf" /etc/default/gcs-ap-streaming
+install -m 644 "$PROJECT_DIR/config/gcs-ap-streaming.conf" /etc/default/gcs-ap-streaming.template
+if [[ ! -f /etc/default/gcs-ap-streaming ]]; then
+    install -m 644 "$PROJECT_DIR/config/gcs-ap-streaming.conf" /etc/default/gcs-ap-streaming
+else
+    echo "Keeping /etc/default/gcs-ap-streaming (set GCS_WLAN_CONNECTION for wlan0 client)"
+fi
 install -m 644 "$PROJECT_DIR/config/mediamtx-gcs.yml" /etc/mediamtx-gcs.yml.template
 "$INSTALL_BIN/install-mediamtx.sh" || echo "WARN: MediaMTX install skipped (no network?) — run: sudo install-mediamtx.sh"
-install -m 644 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" /usr/share/applications/gcs-toggle-ap.desktop
-mkdir -p "${DESKTOP_HOME}/Desktop"
-install -m 755 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
-chown "${DESKTOP_USER}:${DESKTOP_USER}" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
-# GNOME treats ~/Desktop/*.desktop as untrusted until executable + trusted metadata.
-if command -v gio >/dev/null 2>&1; then
-    sudo -u "${DESKTOP_USER}" gio set "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop" metadata::trusted true 2>/dev/null || true
+install -m 755 "$PROJECT_DIR/scripts/gcs-ap-tray.py" "$INSTALL_BIN/gcs-ap-tray.py"
+# Tray only — remove any legacy desktop / menu launchers
+rm -f "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
+rm -f "${DESKTOP_HOME}/Desktop/gcs-ap-on.desktop" "${DESKTOP_HOME}/Desktop/gcs-ap-off.desktop"
+rm -f "${DESKTOP_HOME}/Desktop/toggle-hotspot.desktop"
+rm -f /usr/share/applications/gcs-toggle-ap.desktop
+rm -f /usr/share/applications/gcs-ap-settings.desktop
+rm -f /usr/local/bin/update-ap-desktop-icon.sh
+USER_UNIT_DIR="${DESKTOP_HOME}/.config/systemd/user"
+mkdir -p "${USER_UNIT_DIR}"
+cp "$PROJECT_DIR/systemd/gcs-ap-tray.service" "${USER_UNIT_DIR}/"
+chown "${DESKTOP_USER}:${DESKTOP_USER}" "${USER_UNIT_DIR}/gcs-ap-tray.service"
+rm -f "${USER_UNIT_DIR}/gcs-ap-icon-refresh.service" "${USER_UNIT_DIR}/gcs-ap-icon-refresh.timer"
+DESKTOP_UID="$(id -u "${DESKTOP_USER}")"
+if [[ -d "/run/user/${DESKTOP_UID}" ]]; then
+    pkill -f '/usr/local/bin/gcs-ap-tray.py' 2>/dev/null || true
+    pkill -f 'MAV_widget/scripts/gcs-ap-tray.py' 2>/dev/null || true
+    sudo -u "${DESKTOP_USER}" \
+        XDG_RUNTIME_DIR="/run/user/${DESKTOP_UID}" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${DESKTOP_UID}/bus" \
+        systemctl --user disable --now gcs-ap-icon-refresh.timer 2>/dev/null || true
+    sudo -u "${DESKTOP_USER}" \
+        XDG_RUNTIME_DIR="/run/user/${DESKTOP_UID}" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${DESKTOP_UID}/bus" \
+        systemctl --user daemon-reload 2>/dev/null || true
+    sudo -u "${DESKTOP_USER}" \
+        XDG_RUNTIME_DIR="/run/user/${DESKTOP_UID}" \
+        DBUS_SESSION_BUS_ADDRESS="unix:path=/run/user/${DESKTOP_UID}/bus" \
+        systemctl --user enable --now gcs-ap-tray.service 2>/dev/null || true
 fi
-echo "GNOME launcher: /usr/share/applications/gcs-toggle-ap.desktop"
-echo "Desktop icon:     ${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
+echo "AP control: gcs-ap-tray.service (top panel icon only)"
+
+mkdir -p /var/lib/gcs-ap
+
+# Passwordless sudo (before long network setup — do not interrupt before this)
+cat > "$SUDOERS_FILE" <<'EOF'
+# MAV Widget — GCS AP toggle (tray + CLI)
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-ap-user.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/start-drone-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-drone-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/start-universal-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-universal-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/autostart-gcs.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/setup-nat.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/check-nat.sh
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/iptables
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/gcs-ap-manual-off.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restart-ap-streaming.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restore-wlan-client.sh
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gcs-video-rtsp.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop gcs-video-rtsp.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart gcs-video-rtsp.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl reset-failed drone-hotspot.service
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/iw
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/ip
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/sysctl
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start hostapd
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop hostapd
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start dnsmasq
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop dnsmasq
+ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 hostapd
+ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 dnsmasq
+ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 mavproxy
+ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 python3
+EOF
+chmod 440 "$SUDOERS_FILE"
+echo "sudoers: $SUDOERS_FILE (toggle-ap.sh = passwordless AP on/off from tray)"
 
 mkdir -p /etc/dnsmasq.d
 install -m 644 "$PROJECT_DIR/config/dnsmasq-drone-hotspot.conf" /etc/dnsmasq.d/drone-hotspot.conf
@@ -67,43 +153,15 @@ systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
 systemctl enable drone-hotspot.service gcs-video-udp-relay.service gcs-video-rtsp.service
-systemctl restart drone-hotspot.service
+if [[ -f /var/lib/gcs-ap/manual-off ]]; then
+    echo "AP manually off — skipping drone-hotspot restart"
+    systemctl stop drone-hotspot.service 2>/dev/null || true
+    "$INSTALL_BIN/stop-drone-hotspot.sh" 2>/dev/null || true
+else
+    systemctl restart drone-hotspot.service
+fi
 systemctl restart gcs-video-udp-relay.service gcs-video-rtsp.service 2>/dev/null || true
 "$INSTALL_BIN/setup-nat.sh"
-
-# Passwordless sudo for GCS scripts (ubuntu user)
-cat > "$SUDOERS_FILE" <<'EOF'
-# MAV Widget — hotspot and MAVProxy autostart
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/start-drone-hotspot.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-drone-hotspot.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/start-universal-hotspot.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-universal-hotspot.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/autostart-gcs.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/setup-nat.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/check-nat.sh
-ubuntu ALL=(root) NOPASSWD: /usr/sbin/iptables
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
-ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restart-ap-streaming.sh
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gcs-video-rtsp.service
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop gcs-video-rtsp.service
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart gcs-video-rtsp.service
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start drone-hotspot.service
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop drone-hotspot.service
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart drone-hotspot.service
-ubuntu ALL=(root) NOPASSWD: /usr/sbin/iw
-ubuntu ALL=(root) NOPASSWD: /usr/sbin/ip
-ubuntu ALL=(root) NOPASSWD: /usr/sbin/sysctl
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start hostapd
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop hostapd
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start dnsmasq
-ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop dnsmasq
-ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 hostapd
-ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 dnsmasq
-ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 mavproxy
-ubuntu ALL=(root) NOPASSWD: /usr/bin/killall -9 python3
-EOF
-chmod 440 "$SUDOERS_FILE"
 
 # Fix broken GNOME autostart (was executing .desktop file as shell script)
 # MAVProxy is started by mavproxy-gcs.service — keep desktop entry hidden.
@@ -138,7 +196,6 @@ echo "  check-ap-stream.sh"
 echo "  Client WiFi: wlan0 (NetworkManager)"
 echo ""
 echo "Commands:"
-echo "  toggle-ap.sh              # GNOME: app menu / desktop icon"
-echo "  systemctl status drone-hotspot"
-echo "  systemctl restart drone-hotspot"
-echo "  journalctl -u drone-hotspot -u hostapd -u dnsmasq -b"
+echo "  Top panel tray icon  # right-click: on/off, settings"
+echo "  toggle-ap.sh         # terminal"
+echo "  systemctl --user status gcs-ap-tray"

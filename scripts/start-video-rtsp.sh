@@ -40,7 +40,21 @@ ensure_udp_relay() {
         || pgrep -f '[v]ideo-udp-relay.py' >/dev/null; then
         return 0
     fi
-    log "WARN: gcs-video-udp-relay not running" >&2
+    log "Starting gcs-video-udp-relay..."
+    systemctl start gcs-video-udp-relay.service 2>/dev/null || true
+    sleep 1
+}
+
+wait_mediamtx() {
+    local i
+    for i in $(seq 1 30); do
+        if ss -ltn 2>/dev/null | grep -q "${AP_IP}:${RTSP_PORT}"; then
+            return 0
+        fi
+        sleep 1
+    done
+    log "MediaMTX not listening on ${AP_IP}:${RTSP_PORT}" >&2
+    return 1
 }
 
 render_mediamtx_config() {
@@ -120,5 +134,6 @@ trap cleanup EXIT INT TERM
 wait_ap
 ensure_udp_relay
 start_mediamtx
+wait_mediamtx || true
 log "ffmpeg RTP :${VIDEO_FWD_PORT} -> ${RTSP_PUBLISH}"
 publisher_loop

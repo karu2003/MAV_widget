@@ -1,0 +1,14 @@
+[Icon Theme]
+Name=Hicolor
+Comment=GCS AP status icons
+Directories=48x48/apps,scalable/apps
+
+[48x48/apps]
+Size=48
+Type=Fixed
+
+[scalable/apps]
+Size=256
+Type=Scalable
+MinSize=1
+MaxSize=256
