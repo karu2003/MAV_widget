@@ -167,6 +167,7 @@ python3 ~/.local/bin/mavproxy.py \
     --out=127.0.0.1:14551 \
     --out=127.0.0.1:14552 \
     --out=udpbcast:192.168.54.255:14550 \
+    --out=udpin:192.168.54.1:14550 \
     --nowait \
     --force-connected \
     --non-interactive
@@ -207,6 +208,8 @@ Internet sources (uplinks)          Recipients (NAT clients)
 | `eth0` | Built-in radio — **static `192.168.53.1/24`**, no default route |
 | `eth1` | **USB debug internet** — DHCP (`192.168.0.x`) |
 | `uap0` | AP for clients (`192.168.54.1/24`) — receives internet via NAT |
+
+**AP clients** — MAVLink broadcast on UDP **14550**, video **RTSP** `rtsp://192.168.54.1:8554/stream` (H.264 from UDP **5600** by default). See [docs/AP_CLIENTS.md](docs/AP_CLIENTS.md). Check: `check-ap-stream.sh`.
 
 Interface names are fixed at boot via **systemd `.link`** (MAC → `eth0`/`eth1`).  
 **Reboot required** after first install. Boot service `gcs-network.service` re-applies static IP if needed.

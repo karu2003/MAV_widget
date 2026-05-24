@@ -13,7 +13,7 @@ ArduPilot  --UDP-->  192.168.53.1:14550  (MAVProxy --master only)
                            |
                      MAVProxy
                      /    |    \
-            127.0.0.1:14551  127.0.0.1:14552  broadcast 192.168.54.255:14550
+            127.0.0.1:14551  127.0.0.1:14552  broadcast 192.168.54.255:14550  udpin 192.168.54.1:14550
                  |              |
                QGC            widget
 ```
@@ -103,6 +103,7 @@ mavproxy.py \
     --out=127.0.0.1:14551 \
     --out=127.0.0.1:14552 \
     --out=udpbcast:192.168.54.255:14550 \
+    --out=udpin:192.168.54.1:14550 \
     --nowait \
     --force-connected \
     --non-interactive

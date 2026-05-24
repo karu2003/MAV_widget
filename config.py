@@ -45,6 +45,12 @@ MAVPROXY_MASTER = "udp:192.168.53.1:14550"
 QGC_PORT = 14551
 WIDGET_PORT = 14552
 
+# Wi-Fi AP clients (MAVProxy udpbcast / RTSP relay)
+AP_IP = "192.168.54.1"
+AP_MAVLINK_PORT = 14550
+AP_RTSP_URL = "rtsp://192.168.54.1:8554/stream"
+VIDEO_UDP_PORT = 5600
+
 # Axes with inverted up/down (evdev value flipped before PWM)
 AXIS_INVERT = {
     "ABS_Y": True,   # left stick Y (pitch)

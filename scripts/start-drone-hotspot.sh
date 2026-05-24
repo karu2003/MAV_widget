@@ -94,4 +94,12 @@ start_services() {
 
 setup_interface
 start_services
-log "AP ready: SSID MantaAP on $AP ($AP_IP)"
+
+if [[ -x /usr/local/bin/restart-ap-streaming.sh ]]; then
+    /usr/local/bin/restart-ap-streaming.sh || log "WARN: AP streaming restart failed"
+elif [[ -x "$(dirname "$0")/restart-ap-streaming.sh" ]]; then
+    "$(dirname "$0")/restart-ap-streaming.sh" || log "WARN: AP streaming restart failed"
+fi
+
+SSID="$(grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || echo 'AP')"
+log "AP ready: SSID ${SSID} on $AP ($AP_IP)"

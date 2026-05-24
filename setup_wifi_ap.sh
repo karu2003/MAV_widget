@@ -33,6 +33,10 @@ install -m 755 "$PROJECT_DIR/scripts/ensure_network.sh" "$INSTALL_BIN/ensure-net
 install -m 755 "$PROJECT_DIR/scripts/check-network.sh" "$INSTALL_BIN/check-network.sh"
 install -m 755 "$PROJECT_DIR/scripts/autostart-gcs.sh" "$INSTALL_BIN/autostart-gcs.sh"
 install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
+install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-video-rtsp.sh"
+install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
+install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
+install -m 644 "$PROJECT_DIR/config/gcs-ap-streaming.conf" /etc/default/gcs-ap-streaming
 install -m 644 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" /usr/share/applications/gcs-toggle-ap.desktop
 mkdir -p "${DESKTOP_HOME}/Desktop"
 install -m 755 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
@@ -51,13 +55,15 @@ MAV_WIDGET_DIR="$PROJECT_DIR" "$PROJECT_DIR/scripts/setup_network.sh"
 
 sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     "$PROJECT_DIR/systemd/drone-hotspot.service" > "$SYSTEMD_DIR/drone-hotspot.service"
+install -m 644 "$PROJECT_DIR/systemd/gcs-video-rtsp.service" "$SYSTEMD_DIR/gcs-video-rtsp.service"
 
 # hostapd/dnsmasq must not start before uap0 exists
 systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable drone-hotspot.service
+systemctl enable drone-hotspot.service gcs-video-rtsp.service
 systemctl restart drone-hotspot.service
+systemctl start gcs-video-rtsp.service 2>/dev/null || true
 "$INSTALL_BIN/setup-nat.sh"
 
 # Passwordless sudo for GCS scripts (ubuntu user)
@@ -73,6 +79,10 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/check-nat.sh
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/iptables
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restart-ap-streaming.sh
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gcs-video-rtsp.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop gcs-video-rtsp.service
+ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart gcs-video-rtsp.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start drone-hotspot.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop drone-hotspot.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart drone-hotspot.service
@@ -117,7 +127,9 @@ echo ""
 ip -br addr show wlan0 uap0 2>/dev/null || true
 echo ""
 echo "Done."
-echo "  AP SSID: MantaAP  IP: 192.168.54.1"
+echo "  AP SSID: see /etc/hostapd/drone-hotspot.conf  IP: 192.168.54.1"
+echo "  MAVLink AP: udpbcast :14550  |  RTSP: rtsp://192.168.54.1:8554/stream"
+echo "  check-ap-stream.sh"
 echo "  Client WiFi: wlan0 (NetworkManager)"
 echo ""
 echo "Commands:"
