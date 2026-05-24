@@ -11,6 +11,7 @@ STA_STATE_FILE="${GCS_AP_STATE}/wlan-sta.state"
 DEFAULT_AP_CHANNEL="${DEFAULT_AP_CHANNEL:-6}"
 DEFAULT_AP_HW_MODE="${DEFAULT_AP_HW_MODE:-g}"
 WLAN_STA_WAIT_SEC="${WLAN_STA_WAIT_SEC:-30}"
+WLAN_REG_DOMAIN="${WLAN_REG_DOMAIN:-DE}"
 
 load_gcs_streaming_conf() {
     local conf="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
@@ -21,6 +22,26 @@ load_gcs_streaming_conf() {
 }
 
 wlan_log() { echo "[wlan-concurrent] $*" >&2; }
+
+# MT7921 often stuck at ~3 dBm after AP mode; auth frames then time out (NM: ssid-not-found).
+wlan_fix_radio_power() {
+    if [[ -n "${WLAN_REG_DOMAIN:-}" ]]; then
+        iw reg set "$WLAN_REG_DOMAIN" 2>/dev/null || true
+    fi
+    iw dev "$WLAN" set txpower auto 2>/dev/null || \
+        iw dev "$WLAN" set txpower fixed 2000 2>/dev/null || true
+}
+
+wlan_wait_for_ssid() {
+    local ssid="$1" i bssid
+    for i in $(seq 1 12); do
+        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+        sleep 2
+        bssid="$(wlan_bssid_for_ssid "$ssid")"
+        [[ -n "$bssid" ]] && return 0
+    done
+    return 1
+}
 
 wlan_ap_ssid() {
     grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || true
@@ -199,11 +220,69 @@ wlan_pin_nm_connection() {
     nmcli connection modify "$name" 802-11-wireless.channel "$channel" 2>/dev/null || true
 }
 
+wlan_nm_keyfile_for_connection() {
+    local name="$1"
+    local keyfile uuid path
+
+    keyfile="$(nmcli -g connection.filename connection show "$name" 2>/dev/null || true)"
+    if [[ -n "$keyfile" && -f "$keyfile" ]]; then
+        echo "$keyfile"
+        return 0
+    fi
+
+    path="/etc/NetworkManager/system-connections/${name}.nmconnection"
+    if [[ -f "$path" ]]; then
+        echo "$path"
+        return 0
+    fi
+
+    uuid="$(nmcli -g connection.uuid connection show "$name" 2>/dev/null || true)"
+    if [[ -n "$uuid" ]]; then
+        for keyfile in /etc/NetworkManager/system-connections/*.nmconnection; do
+            [[ -f "$keyfile" ]] || continue
+            grep -q "^uuid=${uuid}$" "$keyfile" 2>/dev/null && {
+                echo "$keyfile"
+                return 0
+            }
+        done
+    fi
+    return 1
+}
+
+wlan_keyfile_unpin_wifi() {
+    local name="$1"
+    local keyfile
+    keyfile="$(wlan_nm_keyfile_for_connection "$name" 2>/dev/null || true)"
+    [[ -n "$keyfile" && -f "$keyfile" ]] || return 0
+    sed -i \
+        -e '/^channel=/d' \
+        -e '/^band=/d' \
+        -e '/^bssid=/d' \
+        -e '/^seen-bssids=/d' \
+        "$keyfile"
+    nmcli connection reload 2>/dev/null || true
+}
+
 wlan_unpin_nm_connection() {
     local name="$1"
-    nmcli connection modify "$name" 802-11-wireless.channel 0 2>/dev/null || true
-    nmcli connection modify "$name" 802-11-wireless.bssid "" 2>/dev/null || true
-    nmcli connection modify "$name" 802-11-wireless.band "" 2>/dev/null || true
+    # channel=0 is rejected on modify; empty string clears pinned channel/band.
+    nmcli connection modify "$name" \
+        802-11-wireless.channel "" \
+        802-11-wireless.band "" \
+        802-11-wireless.bssid "" \
+        802-11-wireless.cloned-mac-address "" 2>/dev/null || true
+    # seen-bssids cannot be cleared via nmcli; scrub keyfile (stale 2.4 GHz BSSID breaks 5 GHz).
+    wlan_keyfile_unpin_wifi "$name"
+}
+
+# Clear channel/band/bssid pins left from concurrent AP mode (AP off / recovery).
+wlan_unpin_all_nm_wifi() {
+    local name type
+    while IFS=: read -r name type; do
+        [[ "$type" != "802-11-wireless" ]] && continue
+        wlan_unpin_nm_connection "$name"
+    done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
+    wlan_log "Cleared NM channel/band pins on all Wi‑Fi profiles"
 }
 
 # Reset Wi‑Fi after AP mode (driver often needs this before STA works again).
@@ -231,6 +310,8 @@ wlan_recover_radio() {
     iw dev "$WLAN" set type managed 2>/dev/null || true
     ip link set "$WLAN" up 2>/dev/null || true
 
+    wlan_unpin_all_nm_wifi
+
     local i state
     for i in $(seq 1 15); do
         state="$(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}')"
@@ -241,7 +322,12 @@ wlan_recover_radio() {
     nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
     sleep 3
 
-    wlan_log "  ${WLAN} state: $(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}')"
+    wlan_fix_radio_power
+    sleep 1
+
+    local tp
+    tp="$(iw dev "$WLAN" info 2>/dev/null | awk '/txpower/ {print $2; exit}')"
+    wlan_log "  ${WLAN} state: $(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}') txpower=${tp:-?}dBm"
 }
 
 wlan_prepare_nm() {
@@ -251,6 +337,7 @@ wlan_prepare_nm() {
         nmcli device set "$AP" managed no 2>/dev/null || true
     fi
     ip link set "$WLAN" up 2>/dev/null || true
+    wlan_fix_radio_power
 }
 
 wlan_profile_ssid() {
@@ -305,6 +392,7 @@ wlan_client_profile_list() {
     while IFS=: read -r name type auto prio; do
         [[ "$type" != "802-11-wireless" ]] && continue
         [[ "$name" == "$ap_ssid" || "$name" == "Hotspot" || "$name" == "CaimanHS" ]] && continue
+        [[ "$name" =~ [[:space:]][0-9]+$ ]] && continue
         wlan_seen_has "$seen" "$name" && continue
         if [[ "$auto" == "yes" ]]; then
             echo "$name"
@@ -316,6 +404,7 @@ wlan_client_profile_list() {
     while IFS=: read -r name type; do
         [[ "$type" != "802-11-wireless" ]] && continue
         [[ "$name" == "$ap_ssid" || "$name" == "Hotspot" || "$name" == "CaimanHS" ]] && continue
+        [[ "$name" =~ [[:space:]][0-9]+$ ]] && continue
         wlan_seen_has "$seen" "$name" && continue
         echo "$name"
         seen="$(wlan_seen_add "$seen" "$name")"
@@ -361,6 +450,7 @@ wlan_try_connect_profile() {
     nmcli connection modify "$profile" connection.interface-name "$WLAN" 2>/dev/null || true
     wlan_unpin_nm_connection "$profile"
 
+    local up_extra=()
     if [[ "$ap_active" == true ]]; then
         channel="$(wlan_ap_channel)"
         local pssid bssid
@@ -369,15 +459,26 @@ wlan_try_connect_profile() {
         bssid="$(wlan_bssid_for_ssid "$pssid")"
         if [[ -n "$bssid" ]]; then
             nmcli connection modify "$profile" 802-11-wireless.bssid "$bssid" 2>/dev/null || true
+            up_extra=(ap "$bssid")
             wlan_log "  ${profile} (AP ch ${channel}, BSSID ${bssid})"
         else
             wlan_log "  ${profile} (AP ch ${channel})"
         fi
     else
-        wlan_log "  ${profile}"
+        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+        sleep 2
+        local pssid bssid
+        pssid="$(wlan_profile_ssid "$profile")"
+        bssid="$(wlan_bssid_for_ssid "$pssid")"
+        if [[ -n "$bssid" ]]; then
+            up_extra=(ap "$bssid")
+            wlan_log "  ${profile} (BSSID ${bssid})"
+        else
+            wlan_log "  ${profile}"
+        fi
     fi
 
-    if err="$(nmcli -w 45 connection up "$profile" ifname "$WLAN" 2>&1)"; then
+    if err="$(nmcli -w 45 connection up "$profile" ifname "$WLAN" "${up_extra[@]}" 2>&1)"; then
         wlan_unpin_nm_connection "$profile"
         wlan_save_sta_state "$profile"
         wlan_log "Connected: ${profile} ch=$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
@@ -417,6 +518,12 @@ wlan_connect_client() {
     if ! command -v nmcli >/dev/null 2>&1; then
         wlan_log "ERROR: nmcli not found"
         return 1
+    fi
+
+    if [[ -x /usr/local/bin/cleanup-nm-wifi-duplicates.sh ]]; then
+        /usr/local/bin/cleanup-nm-wifi-duplicates.sh >&2 || true
+    elif [[ -x "$(dirname "${BASH_SOURCE[0]}")/cleanup-nm-wifi-duplicates.sh" ]]; then
+        "$(dirname "${BASH_SOURCE[0]}")/cleanup-nm-wifi-duplicates.sh" >&2 || true
     fi
 
     if [[ "$recover" == recover || "$recover" == --recover ]]; then

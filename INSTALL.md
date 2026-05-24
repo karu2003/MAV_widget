@@ -122,6 +122,8 @@ Set in `/etc/default/gcs-ap-streaming`: `GCS_WLAN_CONNECTION=ProfileName`
 
 ### 4.5 AP control
 
+AP is **off by default at every boot** (`gcs-ap-default-off.service` sets `manual-off`). Turn on only from tray or `toggle-ap.sh`.
+
 - **Tray icon** (top panel) — right-click: AP on/off, Reconnect Wi‑Fi client, Settings
 - Terminal: `toggle-ap.sh`
 
@@ -153,6 +155,8 @@ uap0: CaimanHS, channel 11
 | `unknown configuration item 'noscan'` | `sudo ensure-hostapd-concurrent.sh` |
 | AP on ch 6, router on ch 11 | Restart AP after wlan0 connected: `sudo systemctl restart drone-hotspot` |
 | Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
+| Profile `CuCu` (duplicate) | `sudo cleanup-nm-wifi-duplicates.sh` |
+| AP starts at boot unwanted | `sudo systemctl enable gcs-ap-default-off.service` |
 | wlan0 down, AP still on | Tray → **Reconnect Wi‑Fi client**, or wait for keepalive (~20 s) |
 | Only AP, no internet on wlan0 | Router must be on **same channel** as AP while both run |
 

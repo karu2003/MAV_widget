@@ -1,0 +1,13 @@
+[Unit]
+Description=GCS AP default off at boot (enable only via tray/toggle-ap)
+Before=drone-hotspot.service
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/mkdir -p /var/lib/gcs-ap
+ExecStart=/usr/bin/touch /var/lib/gcs-ap/manual-off
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

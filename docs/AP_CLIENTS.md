@@ -138,6 +138,10 @@ iw dev
 
 Do not use the AP SSID (CaimanHS) as client profile.
 
+**AP off at boot:** `gcs-ap-default-off.service` creates `/var/lib/gcs-ap/manual-off` before `drone-hotspot`. Enable AP only from tray / `toggle-ap.sh`.
+
+**Duplicate NM profiles** (`CuCu`): created when NetworkManager renames a profile after failed `connection modify`. Run `sudo cleanup-nm-wifi-duplicates.sh`.
+
 ### Troubleshooting
 
 | Symptom | Fix |
@@ -145,7 +149,31 @@ Do not use the AP SSID (CaimanHS) as client profile.
 | AP won't start, `unknown configuration item 'noscan'` | `sudo ensure-hostapd-concurrent.sh` (removes invalid `noscan` from hostapd 2.10) |
 | Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
 | Only AP or only Wi‑Fi works | `sudo ./scripts/install-ap-tray.sh` then toggle AP |
-| `journalctl -u hostapd` shows channel errors | wlan0 must connect first; AP copies its channel |
+| `network could not be found` | Stale `seen-bssids` (NM 1.36 ignores keyfile sed) — `sudo ./scripts/repair-wifi-profile.sh Vodafone-5E06` |
+
+**Recreate profile (fixes immutable `seen-bssids` on NM 1.36):**
+
+```bash
+sudo ./scripts/repair-wifi-profile.sh Vodafone-5E06
+# or manual:
+PSK=$(sudo nmcli -s -g 802-11-wireless-security.psk connection show Vodafone-5E06)
+sudo nmcli connection delete Vodafone-5E06
+sudo nmcli device wifi connect "Vodafone-5E06" password "$PSK" ifname wlan0 bssid 2C:58:4F:95:06:CB
+iw dev wlan0 link
+```
+
+Use the BSSID from `nmcli device wifi list ifname wlan0 | grep Vodafone` (5 GHz `…CB`, not old 2.4 GHz `…CA`).
+
+**Auth timeout / still `ssid-not-found` after recreate:** check `iw dev wlan0 info` — if `txpower` is ~**3 dBm**, restore it then reconnect:
+
+```bash
+sudo iw reg set DE
+sudo iw dev wlan0 set txpower auto
+iw dev wlan0 info | grep txpower
+sudo nmcli connection up Vodafone-5E06 ifname wlan0 ap 2C:58:4F:95:06:CB
+```
+
+If txpower stays at 3 dBm: `sudo modprobe -r mt7921e && sudo modprobe mt7921e`, then retry.
 
 Install/update scripts:
 

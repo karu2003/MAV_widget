@@ -53,6 +53,7 @@ install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-vi
 install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent.sh" "$INSTALL_BIN/wlan-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
 install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent-keepalive.sh" "$INSTALL_BIN/wlan-concurrent-keepalive.sh"
+install -m 755 "$PROJECT_DIR/scripts/reset-wifi-profiles.sh" "$INSTALL_BIN/reset-wifi-profiles.sh"
 install -m 755 "$PROJECT_DIR/scripts/fix-wlan-after-ap.sh" "$INSTALL_BIN/fix-wlan-after-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
@@ -102,6 +103,7 @@ fi
 echo "AP control: gcs-ap-tray.service (top panel icon only)"
 
 mkdir -p /var/lib/gcs-ap
+touch /var/lib/gcs-ap/manual-off
 "$INSTALL_BIN/ensure-hostapd-concurrent.sh" 2>/dev/null || true
 
 # Passwordless sudo (before long network setup — do not interrupt before this)
@@ -121,6 +123,7 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/gcs-ap-manual-off.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restart-ap-streaming.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restore-wlan-client.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/reset-wifi-profiles.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/fix-wlan-after-ap.sh
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gcs-video-rtsp.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop gcs-video-rtsp.service
@@ -153,21 +156,20 @@ sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     "$PROJECT_DIR/systemd/drone-hotspot.service" > "$SYSTEMD_DIR/drone-hotspot.service"
 install -m 644 "$PROJECT_DIR/systemd/gcs-video-rtsp.service" "$SYSTEMD_DIR/gcs-video-rtsp.service"
 
+install -m 644 "$PROJECT_DIR/systemd/gcs-ap-default-off.service" "$SYSTEMD_DIR/gcs-ap-default-off.service"
 install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.service" "$SYSTEMD_DIR/gcs-wlan-keepalive.service"
 install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.timer" "$SYSTEMD_DIR/gcs-wlan-keepalive.timer"
+install -m 755 "$PROJECT_DIR/scripts/cleanup-nm-wifi-duplicates.sh" "$INSTALL_BIN/cleanup-nm-wifi-duplicates.sh"
 
 # hostapd/dnsmasq must not start before uap0 exists
 systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable drone-hotspot.service gcs-video-udp-relay.service gcs-video-rtsp.service gcs-wlan-keepalive.timer
-if [[ -f /var/lib/gcs-ap/manual-off ]]; then
-    echo "AP manually off — skipping drone-hotspot restart"
-    systemctl stop drone-hotspot.service 2>/dev/null || true
-    "$INSTALL_BIN/stop-drone-hotspot.sh" 2>/dev/null || true
-else
-    systemctl restart drone-hotspot.service
-fi
+systemctl enable gcs-ap-default-off.service drone-hotspot.service \
+    gcs-video-udp-relay.service gcs-video-rtsp.service gcs-wlan-keepalive.timer
+systemctl start gcs-ap-default-off.service 2>/dev/null || true
+systemctl stop drone-hotspot.service 2>/dev/null || true
+"$INSTALL_BIN/stop-drone-hotspot.sh" 2>/dev/null || true
 systemctl restart gcs-video-udp-relay.service gcs-video-rtsp.service 2>/dev/null || true
 "$INSTALL_BIN/setup-nat.sh"
 

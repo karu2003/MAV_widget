@@ -10,6 +10,7 @@ fi
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTALL_BIN="/usr/local/bin"
+SYSTEMD_DIR="/etc/systemd/system"
 SUDOERS_FILE="/etc/sudoers.d/mav-widget-hotspot"
 DESKTOP_USER="${SUDO_USER:-ubuntu}"
 DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
@@ -26,6 +27,15 @@ install -m 755 "$PROJECT_DIR/scripts/ensure-hostapd-concurrent.sh" "$INSTALL_BIN
 install -m 755 "$PROJECT_DIR/scripts/configure-wlan-client.sh" "$INSTALL_BIN/configure-wlan-client.sh"
 install -m 755 "$PROJECT_DIR/scripts/gcs-ap-tray.py" "$INSTALL_BIN/gcs-ap-tray.py"
 mkdir -p /var/lib/gcs-ap
+touch /var/lib/gcs-ap/manual-off
+
+install -m 644 "$PROJECT_DIR/systemd/gcs-ap-default-off.service" "$SYSTEMD_DIR/gcs-ap-default-off.service"
+systemctl daemon-reload
+systemctl enable gcs-ap-default-off.service
+systemctl start gcs-ap-default-off.service
+
+install -m 755 "$PROJECT_DIR/scripts/reset-wifi-profiles.sh" "$INSTALL_BIN/reset-wifi-profiles.sh"
+install -m 755 "$PROJECT_DIR/scripts/repair-wifi-profile.sh" "$INSTALL_BIN/repair-wifi-profile.sh"
 
 # Remove legacy desktop launchers (tray only)
 rm -f "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
@@ -42,6 +52,9 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-ap-user.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restore-wlan-client.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/fix-wlan-after-ap.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/cleanup-nm-wifi-duplicates.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/repair-wifi-profile.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/reset-wifi-profiles.sh
 EOF
     chmod 440 "$SUDOERS_FILE"
 fi
