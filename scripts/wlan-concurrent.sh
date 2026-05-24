@@ -8,6 +8,9 @@ AP="${AP:-uap0}"
 HOSTAPD_CONF="${HOSTAPD_CONF:-/etc/hostapd/drone-hotspot.conf}"
 GCS_AP_STATE="${GCS_AP_STATE:-/var/lib/gcs-ap}"
 STA_STATE_FILE="${GCS_AP_STATE}/wlan-sta.state"
+DEFAULT_AP_CHANNEL="${DEFAULT_AP_CHANNEL:-6}"
+DEFAULT_AP_HW_MODE="${DEFAULT_AP_HW_MODE:-g}"
+WLAN_STA_WAIT_SEC="${WLAN_STA_WAIT_SEC:-30}"
 
 load_gcs_streaming_conf() {
     local conf="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
@@ -17,7 +20,7 @@ load_gcs_streaming_conf() {
     fi
 }
 
-wlan_log() { echo "[wlan-concurrent] $*"; }
+wlan_log() { echo "[wlan-concurrent] $*" >&2; }
 
 wlan_ap_ssid() {
     grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || true
@@ -27,13 +30,20 @@ wlan_is_ap_active() {
     ip link show "$AP" &>/dev/null && systemctl is-active --quiet hostapd 2>/dev/null
 }
 
-# Read channel from wlan0 (connected or cached).
+# Channel for concurrent STA+AP (prefer live AP/uap0 when AP is running).
 wlan_ap_channel() {
     local ch
     ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
     if [[ -n "$ch" ]]; then
         echo "$ch"
         return 0
+    fi
+    if wlan_is_ap_active; then
+        ch="$(iw dev "$AP" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+        if [[ -n "$ch" ]]; then
+            echo "$ch"
+            return 0
+        fi
     fi
     if [[ -f "$STA_STATE_FILE" ]]; then
         ch="$(grep -E '^channel=' "$STA_STATE_FILE" 2>/dev/null | cut -d= -f2)"
@@ -68,6 +78,65 @@ wlan_hw_mode_for_channel() {
     fi
 }
 
+# hw_mode from link frequency (MHz): >=5000 → 5 GHz (a), else 2.4 GHz (g).
+wlan_hw_mode_from_freq() {
+    local freq="$1"
+    freq="${freq//MHz/}"
+    freq="${freq// /}"
+    if [[ -n "$freq" && "$freq" -ge 5000 ]]; then
+        echo "a"
+    else
+        echo "g"
+    fi
+}
+
+wlan_sta_is_linked() {
+    iw dev "$WLAN" link 2>/dev/null | grep -q "Connected to"
+}
+
+# Read channel + hw_mode from active wlan0 STA link (concurrent: AP must match).
+wlan_read_sta_rf() {
+    local freq ch hw
+    if ! wlan_sta_is_linked; then
+        echo "${DEFAULT_AP_CHANNEL} ${DEFAULT_AP_HW_MODE} 0"
+        return 1
+    fi
+    freq="$(iw dev "$WLAN" link 2>/dev/null | awk '/freq:/ {print $2; exit}')"
+    ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+    hw="$(wlan_hw_mode_from_freq "$freq")"
+    [[ -z "$ch" ]] && ch="${DEFAULT_AP_CHANNEL}"
+    echo "${ch} ${hw} ${freq}"
+    return 0
+}
+
+# Wait for wlan0 client, then set hostapd channel/hw_mode to match (or defaults).
+wlan_sync_ap_channel_to_sta() {
+    local i ch hw freq connected=0
+
+    wlan_log "Waiting for ${WLAN} client — AP will use the same channel"
+    for i in $(seq 1 "$WLAN_STA_WAIT_SEC"); do
+        if wlan_sta_is_linked; then
+            connected=1
+            break
+        fi
+        sleep 1
+    done
+
+    if [[ "$connected" -eq 1 ]]; then
+        freq="$(iw dev "$WLAN" link 2>/dev/null | awk '/freq:/ {print $2; exit}')"
+        ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+        hw="$(wlan_hw_mode_from_freq "$freq")"
+        [[ -z "$ch" ]] && ch="${DEFAULT_AP_CHANNEL}"
+        wlan_log "Client active — freq=${freq} MHz, channel=${ch}, hw_mode=${hw}"
+    else
+        ch="${DEFAULT_AP_CHANNEL}"
+        hw="${DEFAULT_AP_HW_MODE}"
+        wlan_log "Client not connected — AP defaults: channel=${ch}, hw_mode=${hw}"
+    fi
+
+    wlan_apply_hostapd_rf "$ch" "$hw"
+}
+
 wlan_link_bssid() {
     iw dev "$WLAN" link 2>/dev/null | awk '/Connected to/ {print $3; exit}'
 }
@@ -83,8 +152,10 @@ wlan_save_sta_state() {
     ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
     bssid="$(wlan_link_bssid)"
     ssid="$(iw dev "$WLAN" link 2>/dev/null | awk -F'ssid ' '/SSID:/ {print $2; exit}')"
+    freq="$(iw dev "$WLAN" link 2>/dev/null | awk '/freq:/ {print $2; exit}')"
     band="$(wlan_band_for_channel "${ch:-6}")"
-    hw="$(wlan_hw_mode_for_channel "${ch:-6}")"
+    hw="$(wlan_hw_mode_from_freq "$freq")"
+    [[ -z "$ch" ]] && hw="$(wlan_hw_mode_for_channel "${DEFAULT_AP_CHANNEL}")"
     {
         echo "profile=${profile}"
         echo "channel=${ch}"
@@ -104,8 +175,8 @@ wlan_ensure_hostapd_concurrent_opts() {
 
 wlan_apply_hostapd_rf() {
     local channel="${1:-$(wlan_ap_channel)}"
-    local hw_mode band
-    hw_mode="$(wlan_hw_mode_for_channel "$channel")"
+    local hw_mode="${2:-$(wlan_hw_mode_for_channel "$channel")}"
+    local band
     band="$(wlan_band_for_channel "$channel")"
     [[ -f "$HOSTAPD_CONF" ]] || return 0
     wlan_ensure_hostapd_concurrent_opts
@@ -115,7 +186,7 @@ wlan_apply_hostapd_rf() {
         echo "hw_mode=${hw_mode}" >>"$HOSTAPD_CONF"
     fi
     sed -i "s/^channel=.*/channel=${channel}/" "$HOSTAPD_CONF"
-    wlan_log "hostapd hw_mode=${hw_mode} channel=${channel} (${band})"
+    wlan_log "hostapd synced: hw_mode=${hw_mode} channel=${channel} (${band}, same as ${WLAN} client)"
 }
 
 wlan_pin_nm_connection() {
@@ -184,6 +255,19 @@ wlan_prepare_nm() {
 
 wlan_profile_ssid() {
     nmcli -t -f 802-11-wireless.ssid connection show "$1" 2>/dev/null | head -1 | cut -d: -f2-
+}
+
+# BSSID visible on wlan0 scan for SSID (works while AP locks channel).
+wlan_bssid_for_ssid() {
+    local ssid="$1"
+    local line bssid
+    while IFS= read -r line; do
+        [[ "$line" == *":${ssid}" ]] || continue
+        bssid="${line%:${ssid}}"
+        bssid="${bssid//\\:/:}"
+        echo "$bssid"
+        return 0
+    done < <(nmcli -t -f BSSID,SSID device wifi list ifname "$WLAN" 2>/dev/null)
 }
 
 wlan_seen_has() {
@@ -279,8 +363,16 @@ wlan_try_connect_profile() {
 
     if [[ "$ap_active" == true ]]; then
         channel="$(wlan_ap_channel)"
+        local pssid bssid
+        pssid="$(wlan_profile_ssid "$profile")"
         wlan_pin_nm_connection "$profile" "$channel"
-        wlan_log "  ${profile} (channel ${channel}, band $(wlan_band_for_channel "$channel"))"
+        bssid="$(wlan_bssid_for_ssid "$pssid")"
+        if [[ -n "$bssid" ]]; then
+            nmcli connection modify "$profile" 802-11-wireless.bssid "$bssid" 2>/dev/null || true
+            wlan_log "  ${profile} (AP ch ${channel}, BSSID ${bssid})"
+        else
+            wlan_log "  ${profile} (AP ch ${channel})"
+        fi
     else
         wlan_log "  ${profile}"
     fi
@@ -333,13 +425,18 @@ wlan_connect_client() {
 
     wlan_prepare_nm
 
-    if [[ "$ap_active" == false ]] && wlan_is_connected; then
+    if wlan_is_connected; then
         profile="$(nmcli -t -f CONNECTION device show "$WLAN" 2>/dev/null | head -1)"
         if [[ -n "$profile" && "$profile" != "--" ]]; then
             wlan_save_sta_state "$profile"
-            wlan_log "Already connected: ${profile}"
+            wlan_log "Already connected: ${profile} (AP ${ap_active:+on}${ap_active:-off})"
             return 0
         fi
+    fi
+
+    if [[ "$ap_active" == true ]]; then
+        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+        sleep 2
     fi
 
     wlan_log "Trying Wi‑Fi profiles (AP ${ap_active:+on}${ap_active:-off})..."
@@ -357,10 +454,11 @@ wlan_connect_client() {
 
     if [[ "$ap_active" == true ]]; then
         channel="$(wlan_ap_channel)"
-        wlan_log "FAILED: no profile connected on channel ${channel}"
-        wlan_log "  With AP on, client must use the same channel (2.4 or 5 GHz)"
+        wlan_log "FAILED: no client on channel ${channel} while AP is up"
+        wlan_log "  Both run at once on one channel — need a saved profile for a network on ch ${channel}"
         nmcli -f IN-USE,SSID,CHAN,BAND,SIGNAL device wifi list ifname "$WLAN" 2>/dev/null \
             | head -8 | sed 's/^/    /' || true
+        wlan_connect_nm_autoconnect && return 0
     else
         wlan_log "FAILED: no Wi‑Fi profile connected"
         wlan_connect_nm_autoconnect && return 0

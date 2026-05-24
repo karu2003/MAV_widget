@@ -45,12 +45,8 @@ preconnect_wlan() {
     if ! command -v nmcli >/dev/null 2>&1; then
         return 0
     fi
-    log "Connect wlan0 client before AP (any saved profile)"
-    if wlan_connect_client; then
-        log "wlan0 on channel $(wlan_ap_channel) — AP will match"
-    else
-        log "WARN: wlan0 not connected yet; AP uses last known or default channel"
-    fi
+    log "Connect ${WLAN} before AP (AP channel = client channel)"
+    wlan_connect_client || log "WARN: pre-connect failed — will wait for link or use default ch ${DEFAULT_AP_CHANNEL}"
 }
 
 setup_interface() {
@@ -61,10 +57,8 @@ setup_interface() {
 
     preconnect_wlan
 
-    local channel
-    channel="$(wlan_ap_channel)"
-    wlan_apply_hostapd_rf "$channel"
-    log "AP will use channel ${channel} (same radio as wlan0 client)"
+    # One radio / one channel: AP hw_mode+channel must match router (STA link).
+    wlan_sync_ap_channel_to_sta
 
     ip link set "$WLAN" up || true
 
@@ -128,8 +122,11 @@ if ! start_services; then
 fi
 
 if ! restore_wlan_client; then
-    log "WARN: wlan0 client restore failed (AP OK; retry from tray: Reconnect Wi‑Fi client)"
+    log "WARN: wlan0 client restore failed — keepalive will retry every 20s"
 fi
+
+systemctl enable --now gcs-wlan-keepalive.timer 2>/dev/null \
+    || log "WARN: enable gcs-wlan-keepalive.timer manually"
 
 if [[ -x /usr/local/bin/restart-ap-streaming.sh ]]; then
     /usr/local/bin/restart-ap-streaming.sh || log "WARN: AP streaming restart failed"

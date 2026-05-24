@@ -20,6 +20,8 @@ if ip link show "$AP" &>/dev/null; then
     sleep 2
 fi
 
+systemctl disable --now gcs-wlan-keepalive.timer 2>/dev/null || true
+
 if command -v nmcli >/dev/null 2>&1 && ip link show wlan0 &>/dev/null; then
     nmcli device set wlan0 managed yes 2>/dev/null || true
     if [[ -x /usr/local/bin/restore-wlan-client.sh ]]; then

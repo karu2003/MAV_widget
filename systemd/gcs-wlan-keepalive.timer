@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic wlan0 reconnect while AP active
+
+[Timer]
+OnBootSec=45
+OnUnitActiveSec=20
+AccuracySec=5
+Unit=gcs-wlan-keepalive.service
+
+[Install]
+WantedBy=timers.target

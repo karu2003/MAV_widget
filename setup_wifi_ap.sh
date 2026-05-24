@@ -52,6 +52,7 @@ fi
 install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-video-rtsp.sh"
 install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent.sh" "$INSTALL_BIN/wlan-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
+install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent-keepalive.sh" "$INSTALL_BIN/wlan-concurrent-keepalive.sh"
 install -m 755 "$PROJECT_DIR/scripts/fix-wlan-after-ap.sh" "$INSTALL_BIN/fix-wlan-after-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
@@ -152,11 +153,14 @@ sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     "$PROJECT_DIR/systemd/drone-hotspot.service" > "$SYSTEMD_DIR/drone-hotspot.service"
 install -m 644 "$PROJECT_DIR/systemd/gcs-video-rtsp.service" "$SYSTEMD_DIR/gcs-video-rtsp.service"
 
+install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.service" "$SYSTEMD_DIR/gcs-wlan-keepalive.service"
+install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.timer" "$SYSTEMD_DIR/gcs-wlan-keepalive.timer"
+
 # hostapd/dnsmasq must not start before uap0 exists
 systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable drone-hotspot.service gcs-video-udp-relay.service gcs-video-rtsp.service
+systemctl enable drone-hotspot.service gcs-video-udp-relay.service gcs-video-rtsp.service gcs-wlan-keepalive.timer
 if [[ -f /var/lib/gcs-ap/manual-off ]]; then
     echo "AP manually off — skipping drone-hotspot restart"
     systemctl stop drone-hotspot.service 2>/dev/null || true

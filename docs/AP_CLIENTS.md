@@ -85,7 +85,26 @@ AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone rad
 
 ## Concurrent AP + wlan0 client
 
-**uap0** (AP for phones) and **wlan0** (internet) share one radio — **one channel only** (`#channels <= 1` in `iw phy`). AP **automatically uses the same channel** as the connected client (2.4 or 5 GHz).
+**uap0** (AP) and **wlan0** (internet) work **at the same time** on one radio — not “AP off → Wi‑Fi on”. Both interfaces stay up; only the channel is shared.
+
+```
+phy#0  one channel only (#channels <= 1)
+  wlan0  managed  →  router (e.g. Vodafone ch11)  — internet
+  uap0   AP       →  CaimanHS                     — phones
+```
+
+**Same channel rule** (before hostapd starts):
+
+| Router (wlan0 client) | AP (uap0 / hostapd) |
+|----------------------|---------------------|
+| 2.4 GHz channel 6    | channel 6, `hw_mode=g` |
+| 2.4 GHz channel 11   | channel 11, `hw_mode=g` |
+| 5 GHz channel 36     | channel 36, `hw_mode=a` |
+
+Different channels at the same time — **impossible** on this adapter.  
+`start-drone-hotspot.sh` connects wlan0, reads `freq` + `channel` from `iw dev wlan0 link`, then writes the same values to `/etc/hostapd/drone-hotspot.conf`. If wlan0 is not connected within 30s → default channel **6**, `hw_mode=g`.
+
+`gcs-wlan-keepalive.timer` reconnects wlan0 every 20s if it drops while AP stays on.
 
 No manual setup required: scripts try all NetworkManager Wi‑Fi profiles (autoconnect first). Optional preference:
 
