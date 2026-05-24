@@ -1,0 +1,7 @@
+# USB debug adapter -> always eth1
+[Match]
+MACAddress=00:60:6e:b9:ce:28
+Type=ether
+
+[Link]
+Name=eth1

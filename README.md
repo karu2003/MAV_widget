@@ -202,9 +202,22 @@ Internet sources (uplinks)          Recipients (NAT clients)
 
 | Interface | Role |
 |---|---|
-| `wlan0`, `eth1` | **Internet uplinks** (Wi‑Fi + Ethernet) |
+| `wlan0` | Wi‑Fi internet uplink |
+| `eth0` | Built-in radio — **static `192.168.53.1/24`**, no default route |
+| `eth1` | **USB debug internet** — DHCP (`192.168.0.x`) |
 | `uap0` | AP for clients (`192.168.54.1/24`) — receives internet via NAT |
-| `eth0` | Radio link (`192.168.53.1/24`) — GCS NATs internet for `192.168.53.x` |
+
+Interface names are fixed at boot via **systemd `.link`** (MAC → `eth0`/`eth1`).  
+**Reboot required** after first install. Boot service `gcs-network.service` re-applies static IP if needed.
+
+```bash
+sudo ./scripts/setup_network.sh
+sudo reboot
+check-network.sh
+```
+
+**Dev PC (Windows):** USB adapter `192.168.0.x` = debug internet (direct, not via GCS).  
+Radio/debug Ethernet `192.168.53.x` → gateway **`192.168.53.1`** (GCS) — internet only through NAT on the GCS.
 
 ```bash
 sudo ./setup_wifi_ap.sh    # AP + NAT rules

@@ -1,0 +1,7 @@
+# Built-in radio port -> always eth0
+[Match]
+MACAddress=00:55:7b:b5:7d:f7
+Type=ether
+
+[Link]
+Name=eth0

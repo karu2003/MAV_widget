@@ -1,0 +1,16 @@
+[connection]
+id=USB-Debug
+uuid=d4309bf2-930f-3831-86d7-ae746039d749
+type=ethernet
+interface-name=eth1
+autoconnect=true
+autoconnect-priority=50
+
+[ethernet]
+mac-address=00:60:6E:B9:CE:28
+
+[ipv4]
+method=auto
+
+[ipv6]
+method=auto
