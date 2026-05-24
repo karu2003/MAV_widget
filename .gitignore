@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+mav.parm
+mav.tlog
+mav.tlog.raw

@@ -28,7 +28,9 @@ chmod +x \
     "${PROJECT_DIR}/scripts/start_mavproxy.sh" \
     "${PROJECT_DIR}/scripts/wait_gcs_ready.sh" \
     "${PROJECT_DIR}/scripts/wait_mavproxy_link.sh" \
-    "${PROJECT_DIR}/scripts/logs.sh"
+    "${PROJECT_DIR}/scripts/logs.sh" \
+    "${PROJECT_DIR}/scripts/check-nat.sh" \
+    "${PROJECT_DIR}/scripts/setup-nat.sh"
 
 mkdir -p "${LOG_DIR}"
 chown "${TARGET_USER}:${TARGET_USER}" "${LOG_DIR}"
@@ -38,7 +40,15 @@ install -m 755 "${PROJECT_DIR}/scripts/autostart-gcs.sh" /usr/local/bin/autostar
 install -m 755 "${PROJECT_DIR}/scripts/start_mavproxy.sh" /usr/local/bin/start_mavproxy.sh
 install -m 755 "${PROJECT_DIR}/scripts/wait_gcs_ready.sh" /usr/local/bin/wait_gcs_ready.sh
 install -m 755 "${PROJECT_DIR}/scripts/logs.sh" /usr/local/bin/mav-gcs-logs.sh
-echo "Installed: /usr/local/bin/{autostart-gcs,start_mavproxy,wait_gcs_ready,mav-gcs-logs}.sh"
+install -m 755 "${PROJECT_DIR}/scripts/check-nat.sh" /usr/local/bin/check-nat.sh
+install -m 755 "${PROJECT_DIR}/scripts/setup-nat.sh" /usr/local/bin/setup-nat.sh
+echo "Installed: /usr/local/bin/{autostart-gcs,start_mavproxy,wait_gcs_ready,mav-gcs-logs,check-nat,setup-nat}.sh"
+
+if [[ "$(id -u)" -eq 0 ]]; then
+    echo ""
+    echo "Applying NAT (wlan0/eth1 -> uap0/eth0)..."
+    "${PROJECT_DIR}/scripts/setup-nat.sh" || echo "WARN: setup-nat failed"
+fi
 
 mkdir -p "${USER_UNIT_DIR}"
 for svc in "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}"; do
@@ -84,4 +94,5 @@ echo ""
 echo "Useful commands (as ${TARGET_USER}, without sudo):"
 echo "  systemctl --user status mavproxy-gcs mav-widget"
 echo "  mav-gcs-logs.sh -f              # log files (~/.local/state/mav-gcs/)"
-echo "  journalctl -b | grep run_widget # if journalctl --user is empty"
+echo "  check-nat.sh                    # NAT: wlan0+eth1 -> AP + 192.168.53.x"
+echo "  sudo setup-nat.sh               # re-apply NAT rules"

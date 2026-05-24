@@ -82,6 +82,14 @@ start_services() {
 
     log "Starting dnsmasq"
     systemctl start dnsmasq
+
+    if [[ -x /usr/local/bin/setup-nat.sh ]]; then
+        log "Applying NAT / forwarding"
+        /usr/local/bin/setup-nat.sh || log "WARN: setup-nat failed"
+    elif [[ -x "$(dirname "$0")/setup-nat.sh" ]]; then
+        log "Applying NAT / forwarding"
+        "$(dirname "$0")/setup-nat.sh" || log "WARN: setup-nat failed"
+    fi
 }
 
 setup_interface

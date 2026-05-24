@@ -19,7 +19,12 @@ echo "Project: $PROJECT_DIR"
 
 install -m 755 "$PROJECT_DIR/scripts/start-drone-hotspot.sh" "$INSTALL_BIN/start-drone-hotspot.sh"
 install -m 755 "$PROJECT_DIR/scripts/stop-drone-hotspot.sh" "$INSTALL_BIN/stop-drone-hotspot.sh"
+install -m 755 "$PROJECT_DIR/scripts/setup-nat.sh" "$INSTALL_BIN/setup-nat.sh"
+install -m 755 "$PROJECT_DIR/scripts/check-nat.sh" "$INSTALL_BIN/check-nat.sh"
 install -m 755 "$PROJECT_DIR/scripts/autostart-gcs.sh" "$INSTALL_BIN/autostart-gcs.sh"
+
+mkdir -p /etc/dnsmasq.d
+install -m 644 "$PROJECT_DIR/config/dnsmasq-drone-hotspot.conf" /etc/dnsmasq.d/drone-hotspot.conf
 
 sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \
     "$PROJECT_DIR/systemd/drone-hotspot.service" > "$SYSTEMD_DIR/drone-hotspot.service"
@@ -30,6 +35,7 @@ systemctl disable hostapd dnsmasq 2>/dev/null || true
 systemctl daemon-reload
 systemctl enable drone-hotspot.service
 systemctl restart drone-hotspot.service
+"$INSTALL_BIN/setup-nat.sh"
 
 # Passwordless sudo for GCS scripts (ubuntu user)
 cat > "$SUDOERS_FILE" <<'EOF'
@@ -39,6 +45,9 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-drone-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/start-universal-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-universal-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/autostart-gcs.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/setup-nat.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/check-nat.sh
+ubuntu ALL=(root) NOPASSWD: /usr/sbin/iptables
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/iw
 ubuntu ALL=(root) NOPASSWD: /usr/sbin/ip

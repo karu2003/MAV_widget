@@ -191,6 +191,31 @@ autoConnectUDP=false
 
 ---
 
+## Network / NAT
+
+```
+Internet sources (uplinks)          Recipients (NAT clients)
+  wlan0  ──┐                        uap0   → AP users 192.168.54.x
+  eth1   ──┼── MASQUERADE ──►       eth0   → radio net 192.168.53.x (GW 192.168.53.1)
+           └── FORWARD ───────────►
+```
+
+| Interface | Role |
+|---|---|
+| `wlan0`, `eth1` | **Internet uplinks** (Wi‑Fi + Ethernet) |
+| `uap0` | AP for clients (`192.168.54.1/24`) — receives internet via NAT |
+| `eth0` | Radio link (`192.168.53.1/24`) — GCS NATs internet for `192.168.53.x` |
+
+```bash
+sudo ./setup_wifi_ap.sh    # AP + NAT rules
+./scripts/check-nat.sh     # from repo (or check-nat.sh after sudo ./setup_autostart.sh)
+sudo ./scripts/setup-nat.sh
+```
+
+AP clients get gateway `192.168.54.1` via dnsmasq. Devices on `192.168.53.x` need **static default gateway `192.168.53.1`** on the radio side.
+
+---
+
 ## Autostart (Winmate GCS)
 
 ```bash
