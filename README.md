@@ -38,7 +38,9 @@ MAV_widget/
 ├── test_joystick.py       # quick joystick test
 ├── requirements.txt
 ├── docs/
-│   └── MAVPROXY_QGC.md    # MAVProxy + QGC port setup and troubleshooting
+│   ├── MAVPROXY_QGC.md    # MAVProxy + QGC port setup and troubleshooting
+│   ├── AP_CLIENTS.md      # MAVLink + RTSP for Wi‑Fi AP clients
+│   └── SECRETS.md         # what must not be committed (passwords, keys)
 ├── scripts/
 │   ├── run_widget.sh           # launch widget immediately (no MAVProxy wait)
 │   ├── start_mavproxy.sh       # start MAVProxy daemon
@@ -48,7 +50,11 @@ MAV_widget/
 │   ├── toggle-screen-lock.sh   # kiosk mode on/off
 │   ├── start-drone-hotspot.sh
 │   ├── stop-drone-hotspot.sh
-│   └── toggle-ap.sh            # GNOME on/off (drone-hotspot.service)
+│   ├── toggle-ap.sh            # GNOME on/off (drone-hotspot.service)
+│   ├── video-udp-relay.py      # eth0:5600 → 127.0.0.1:5601 (RTP copy)
+│   ├── start-video-rtsp.sh     # MediaMTX + ffmpeg RTP → RTSP on AP
+│   ├── check-ap-stream.sh      # verify AP MAVLink + video relay
+│   └── install-mediamtx.sh
 ├── systemd/
 │   ├── mavproxy-gcs.service    # MAVProxy on login (independent of widget)
 │   ├── mav-widget.service
@@ -209,7 +215,7 @@ Internet sources (uplinks)          Recipients (NAT clients)
 | `eth1` | **USB debug internet** — DHCP (`192.168.0.x`) |
 | `uap0` | AP for clients (`192.168.54.1/24`) — receives internet via NAT |
 
-**AP clients** — MAVLink broadcast on UDP **14550**, video **RTSP** `rtsp://192.168.54.1:8554/stream` (H.264 from UDP **5600** by default). See [docs/AP_CLIENTS.md](docs/AP_CLIENTS.md). Check: `check-ap-stream.sh`.
+**AP clients** — MAVLink broadcast on UDP **14550**, video **RTSP** `rtsp://192.168.54.1:8554/stream` (RTP H.264 from drone UDP **5600**, relayed via ffmpeg/MediaMTX). See [docs/AP_CLIENTS.md](docs/AP_CLIENTS.md). Check: `check-ap-stream.sh`.
 
 Interface names are fixed at boot via **systemd `.link`** (MAC → `eth0`/`eth1`).  
 **Reboot required** after first install. Boot service `gcs-network.service` re-applies static IP if needed.

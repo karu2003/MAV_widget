@@ -1,74 +1,84 @@
-# Клиенты Wi‑Fi AP (MAVLink + видео)
+# Wi‑Fi AP clients (MAVLink + video)
 
-Сеть **CaimanHS**, шлюз **192.168.54.1**, DHCP **192.168.54.10–100**.
+Network **CaimanHS**, gateway **192.168.54.1**, DHCP **192.168.54.10–100**.
 
 ## MAVLink (MAVProxy)
 
-Телеметрия уходит **широковещательно** на подсеть AP:
+Telemetry is **broadcast** to the AP subnet:
 
 ```text
 --out=udpbcast:192.168.54.255:14550
 ```
 
-Команды с телефона/планшета принимаются на GCS:
+Commands from phones/tablets are accepted on the GCS AP address:
 
 ```text
 --out=udpin:192.168.54.1:14550
 ```
 
-После включения AP MAVProxy перезапускается автоматически (`restart-ap-streaming.sh`).
+When the AP is enabled, MAVProxy is restarted automatically (`restart-ap-streaming.sh`).
 
-### QGroundControl на клиенте AP
+### QGroundControl on an AP client
 
-1. Подключиться к Wi‑Fi **CaimanHS**.
-2. **Comm Links** → UDP, порт **14550**, режим **Listen** (или адрес **192.168.54.1:14550**).
-3. На самом GCS в QGC отключить **AutoConnect UDP** на 14550 (см. [MAVPROXY_QGC.md](MAVPROXY_QGC.md)).
+1. Connect to Wi‑Fi **CaimanHS**.
+2. **Comm Links** → UDP, port **14550**, mode **Listen** (or host **192.168.54.1**, port **14550**).
+3. On the Winmate GCS, disable **AutoConnect UDP** on port 14550 in QGC (see [MAVPROXY_QGC.md](MAVPROXY_QGC.md)).
 
-Проверка на GCS:
+Verify on the GCS:
 
 ```bash
 check-ap-stream.sh
 ```
 
-## Видео (RTSP)
+## Video (RTSP)
 
-По умолчанию GCS слушает **H.264 по UDP 5600** (как у QGC/companion) и отдаёт клиентам AP:
+The drone sends **RTP H.264** on UDP **5600** (not MPEG-TS). On the GCS, QGroundControl keeps port **5600**; **`gcs-video-udp-relay`** copies packets from `eth0` to `127.0.0.1:5601`, and **ffmpeg** publishes into **MediaMTX** for AP clients:
 
 ```text
 rtsp://192.168.54.1:8554/stream
 ```
 
-Настройка: `/etc/default/gcs-ap-streaming`
-
-| Переменная | Значение по умолчанию |
-|------------|------------------------|
-| `VIDEO_MODE` | `udp` |
-| `VIDEO_UDP_PORT` | `5600` |
-| `VIDEO_MODE=v4l2` | локальная камера `/dev/video0` |
-| `VIDEO_MODE=test` | тестовая картинка (отладка) |
-
-Сервис:
+Install MediaMTX once:
 
 ```bash
-sudo systemctl enable --now gcs-video-rtsp
-sudo journalctl -u gcs-video-rtsp -f
+sudo install-mediamtx.sh
+sudo systemctl restart gcs-video-udp-relay gcs-video-rtsp
+check-ap-stream.sh
 ```
 
-### QGC — видео
+Configuration: `/etc/default/gcs-ap-streaming`
 
-**Settings → Video** → RTSP URL:
+| Variable | Default |
+|----------|---------|
+| `VIDEO_MODE` | `udp` |
+| `VIDEO_UDP_PORT` | `5601` (relay copy; QGC uses `5600`) |
+| `VIDEO_MODE=v4l2` | local camera `/dev/video0` |
+| `VIDEO_MODE=test` | test pattern (debug) |
+
+Services:
+
+```bash
+sudo systemctl enable --now gcs-video-udp-relay gcs-video-rtsp
+sudo journalctl -u gcs-video-rtsp -u gcs-video-udp-relay -f
+```
+
+### QGC — video
+
+**Settings → Video** → **Video Source**: RTSP Video Stream  
+**RTSP URL:**
 
 `rtsp://192.168.54.1:8554/stream`
 
-VLC на телефоне: тот же URL.
+VLC on a phone: same URL (`ffplay -rtsp_transport tcp …` on the GCS may show 404 until ffmpeg is actively publishing).
 
-## Порты
+## Ports
 
-| Сервис | Порт | Интерфейс |
-|--------|------|-----------|
+| Service | Port | Interface |
+|---------|------|-----------|
 | MAVLink broadcast | 14550/udp | 192.168.54.255 |
 | MAVLink uplink | 14550/udp | 192.168.54.1 |
 | RTSP | 8554/tcp | 192.168.54.1 |
-| Видео вход (UDP) | 5600/udp | 0.0.0.0 (с дрона/companion) |
+| Video from drone | 5600/udp | eth0 (companion → GCS) |
+| Video relay (local) | 5601/udp | 127.0.0.1 (ffmpeg RTP ingest) |
 
-Интернет для клиентов AP — NAT (`setup-nat.sh`). Прямой доступ к радиосети дрона **192.168.53.0/24** через `uap0 ↔ eth0`.
+AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone radio subnet **192.168.53.0/24** is forwarded between `uap0` and `eth0`.

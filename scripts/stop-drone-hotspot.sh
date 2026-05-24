@@ -6,8 +6,9 @@ set -euo pipefail
 AP="${AP:-uap0}"
 
 echo "[drone-hotspot] Stopping dnsmasq and hostapd..."
-systemctl stop gcs-video-rtsp.service 2>/dev/null || true
+systemctl stop gcs-video-rtsp.service gcs-video-udp-relay.service 2>/dev/null || true
 pkill -f '[f]fmpeg.*rtsp.*8554' 2>/dev/null || true
+pkill -f '[m]ediamtx.*mediamtx-gcs' 2>/dev/null || true
 systemctl stop dnsmasq 2>/dev/null || true
 systemctl stop hostapd 2>/dev/null || true
 

@@ -1,6 +1,5 @@
 #!/bin/bash
-# RTSP server on AP address — relays drone/companion video to Wi-Fi clients.
-# Requires uap0 with 192.168.54.1 (start after drone-hotspot).
+# MediaMTX (publisher) + ffmpeg RTP/H264 (127.0.0.1:5601) -> RTSP on AP.
 
 set -euo pipefail
 
@@ -12,20 +11,16 @@ AP_IP="${AP_IP:-192.168.54.1}"
 RTSP_PORT="${RTSP_PORT:-8554}"
 RTSP_PATH="${RTSP_PATH:-/stream}"
 VIDEO_MODE="${VIDEO_MODE:-udp}"
-VIDEO_UDP_PORT="${VIDEO_UDP_PORT:-5600}"
-VIDEO_UDP_BIND="${VIDEO_UDP_BIND:-0.0.0.0}"
-VIDEO_DEVICE="${VIDEO_DEVICE:-/dev/video0}"
-VIDEO_V4L2_SIZE="${VIDEO_V4L2_SIZE:-1280x720}"
-VIDEO_V4L2_FPS="${VIDEO_V4L2_FPS:-30}"
+VIDEO_FWD_PORT="${VIDEO_FWD_PORT:-5601}"
 
-RTSP_URL="rtsp://${AP_IP}:${RTSP_PORT}${RTSP_PATH}"
+MEDIAMTX_BIN="${MEDIAMTX_BIN:-/usr/local/bin/mediamtx}"
+MEDIAMTX_TEMPLATE="${MEDIAMTX_TEMPLATE:-/etc/mediamtx-gcs.yml.template}"
+MEDIAMTX_RUNTIME="${MEDIAMTX_RUNTIME:-/run/mediamtx-gcs.yml}"
+RTP_SDP="${RTP_SDP:-/run/gcs-video-rtp.sdp}"
+
+RTSP_PUBLISH="rtsp://${AP_IP}:${RTSP_PORT}${RTSP_PATH}"
 
 log() { echo "[video-rtsp] $*"; }
-
-if ! command -v ffmpeg >/dev/null; then
-    log "ffmpeg not found" >&2
-    exit 1
-fi
 
 wait_ap() {
     local i
@@ -39,45 +34,91 @@ wait_ap() {
     return 1
 }
 
-if pgrep -f '[f]fmpeg.*rtsp.*8554' >/dev/null 2>&1; then
-    log "Already running (pid $(pgrep -f '[f]fmpeg.*rtsp' | head -1))"
-    exit 0
-fi
+ensure_udp_relay() {
+    [[ "$VIDEO_MODE" == "udp" ]] || return 0
+    if systemctl is-active --quiet gcs-video-udp-relay.service 2>/dev/null \
+        || pgrep -f '[v]ideo-udp-relay.py' >/dev/null; then
+        return 0
+    fi
+    log "WARN: gcs-video-udp-relay not running" >&2
+}
+
+render_mediamtx_config() {
+    sed \
+        -e "s/__AP_IP__/${AP_IP}/g" \
+        -e "s/__RTSP_PORT__/${RTSP_PORT}/g" \
+        "$1" >"$2"
+}
+
+write_rtp_sdp() {
+    cat >"$RTP_SDP" <<EOF
+v=0
+o=- 0 0 IN IP4 127.0.0.1
+s=GCS drone video
+c=IN IP4 127.0.0.1
+t=0 0
+m=video ${VIDEO_FWD_PORT} RTP/AVP 96
+a=rtpmap:96 H264/90000
+a=fmtp:96 packetization-mode=1
+EOF
+}
+
+start_mediamtx() {
+    render_mediamtx_config "$MEDIAMTX_TEMPLATE" "$MEDIAMTX_RUNTIME"
+    if pgrep -f '[m]ediamtx /run/mediamtx-gcs' >/dev/null 2>&1; then
+        log "MediaMTX already running"
+        return 0
+    fi
+    log "MediaMTX ${RTSP_PUBLISH} (publisher)"
+    "$MEDIAMTX_BIN" "$MEDIAMTX_RUNTIME" &
+    sleep 1
+}
+
+publish_rtp() {
+    write_rtp_sdp
+    ffmpeg -nostdin -hide_banner -loglevel warning \
+        -protocol_whitelist file,udp,rtp \
+        -fflags nobuffer -flags low_delay \
+        -i "$RTP_SDP" \
+        -c copy \
+        -f rtsp -rtsp_transport tcp \
+        "$RTSP_PUBLISH"
+}
+
+publish_test() {
+    ffmpeg -nostdin -hide_banner -loglevel warning \
+        -f lavfi -i "testsrc=size=640x360:rate=15" \
+        -c:v libx264 -preset ultrafast -tune zerolatency -g 15 \
+        -f rtsp -rtsp_transport tcp \
+        "$RTSP_PUBLISH"
+}
+
+publisher_loop() {
+    while true; do
+        case "$VIDEO_MODE" in
+            udp)
+                publish_rtp || log "RTP publish ended — retrying"
+                ;;
+            test)
+                publish_test || log "test publish ended"
+                ;;
+            *)
+                log "Unknown VIDEO_MODE=${VIDEO_MODE}" >&2
+                exit 1
+                ;;
+        esac
+        sleep 2
+    done
+}
+
+cleanup() {
+    pkill -f '[m]ediamtx /run/mediamtx-gcs' 2>/dev/null || true
+    pkill -f '[f]fmpeg.*rtsp.*8554' 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
 
 wait_ap
-
-log "RTSP ${RTSP_URL} (mode=${VIDEO_MODE})"
-
-case "$VIDEO_MODE" in
-    udp)
-        exec ffmpeg -nostdin -hide_banner -loglevel warning \
-            -fflags nobuffer -flags low_delay \
-            -i "udp://${VIDEO_UDP_BIND}:${VIDEO_UDP_PORT}?overrun_nonfatal=1&fifo_size=50000000" \
-            -c copy \
-            -f rtsp -rtsp_flags listen \
-            "${RTSP_URL}"
-        ;;
-    v4l2)
-        if [[ ! -e "$VIDEO_DEVICE" ]]; then
-            log "No ${VIDEO_DEVICE}" >&2
-            exit 1
-        fi
-        exec ffmpeg -nostdin -hide_banner -loglevel warning \
-            -f v4l2 -input_format h264 -video_size "${VIDEO_V4L2_SIZE}" -framerate "${VIDEO_V4L2_FPS}" \
-            -i "$VIDEO_DEVICE" \
-            -c copy \
-            -f rtsp -rtsp_flags listen \
-            "${RTSP_URL}"
-        ;;
-    test)
-        exec ffmpeg -nostdin -hide_banner -loglevel warning \
-            -f lavfi -i "testsrc=size=640x360:rate=15" \
-            -c:v libx264 -preset ultrafast -tune zerolatency -g 15 \
-            -f rtsp -rtsp_flags listen \
-            "${RTSP_URL}"
-        ;;
-    *)
-        log "Unknown VIDEO_MODE=${VIDEO_MODE} (use udp, v4l2, or test)" >&2
-        exit 1
-        ;;
-esac
+ensure_udp_relay
+start_mediamtx
+log "ffmpeg RTP :${VIDEO_FWD_PORT} -> ${RTSP_PUBLISH}"
+publisher_loop

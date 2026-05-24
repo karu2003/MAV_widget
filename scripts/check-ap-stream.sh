@@ -47,11 +47,22 @@ else
     fail "MAVProxy not running (systemctl --user start mavproxy-gcs)"
 fi
 
-if pgrep -f '[f]fmpeg.*rtsp' >/dev/null || systemctl is-active --quiet gcs-video-rtsp.service 2>/dev/null; then
-    ok "RTSP server (ffmpeg)"
+if systemctl is-active --quiet gcs-video-udp-relay.service 2>/dev/null || pgrep -f '[v]ideo-udp-relay.py' >/dev/null; then
+    ok "UDP video relay (eth0:5600 -> 127.0.0.1:5601)"
 else
-    fail "RTSP not running (systemctl start gcs-video-rtsp)"
+    fail "video-udp-relay not running (QGC uses :5600 on GCS)"
 fi
+
+if pgrep -f '[f]fmpeg.*rtsp.*8554' >/dev/null; then
+    ok "ffmpeg publishing RTP -> RTSP"
+elif pgrep -f '[f]fmpeg.*8554' >/dev/null; then
+    ok "ffmpeg RTSP publisher"
+else
+    fail "ffmpeg not publishing (journalctl -u gcs-video-rtsp -n 10)"
+fi
+
+if pgrep -f '[m]ediamtx /run/mediamtx-gcs' >/dev/null; then
+    ok "RTSP server (MediaMTX publisher)"
 
 if ss -ulnp 2>/dev/null | grep -q ":${MAV_AP_BCAST_PORT}"; then
     ok "UDP :${MAV_AP_BCAST_PORT} in use (expected)"
@@ -61,8 +72,18 @@ fi
 
 if ss -ltnp 2>/dev/null | grep -q ":${RTSP_PORT}"; then
     ok "TCP :${RTSP_PORT} listening"
+elif ss -ltnp 2>/dev/null | grep -q "${AP_IP}:${RTSP_PORT}"; then
+    ok "TCP ${AP_IP}:${RTSP_PORT} listening"
 else
-    fail "RTSP port ${RTSP_PORT} not listening"
+    fail "RTSP port ${RTSP_PORT} not listening — run: sudo install-mediamtx.sh && sudo systemctl restart gcs-video-rtsp"
+fi
+
+if pgrep -f '[m]ediamtx' >/dev/null; then
+    if systemctl is-failed --quiet gcs-video-rtsp.service 2>/dev/null; then
+        fail "gcs-video-rtsp in failed state (journalctl -u gcs-video-rtsp -n 20)"
+    fi
+elif journalctl -u gcs-video-rtsp -n 5 --no-pager 2>/dev/null | grep -qE 'rtpSDP|Invalid data found'; then
+    echo "  WARN: update config — sudo cp .../mediamtx-gcs.yml /etc/mediamtx-gcs.yml.template && sudo systemctl restart gcs-video-rtsp"
 fi
 
 echo ""

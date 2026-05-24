@@ -1,0 +1,20 @@
+[Unit]
+Description=Copy drone H.264 UDP :5600 to localhost for AP RTSP relay
+After=network.target
+Before=gcs-video-rtsp.service
+PartOf=drone-hotspot.service
+
+[Service]
+Type=simple
+Environment=VIDEO_IFACE=eth0
+Environment=VIDEO_UDP_PORT=5600
+Environment=VIDEO_FWD_HOST=127.0.0.1
+Environment=VIDEO_FWD_PORT=5601
+ExecStart=/usr/local/bin/video-udp-relay.py
+Restart=on-failure
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

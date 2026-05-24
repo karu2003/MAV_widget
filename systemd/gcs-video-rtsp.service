@@ -1,7 +1,7 @@
 [Unit]
 Description=GCS RTSP video relay for Wi-Fi AP clients
-After=network-online.target
-Wants=network-online.target
+After=network-online.target gcs-video-udp-relay.service
+Wants=network-online.target gcs-video-udp-relay.service
 PartOf=drone-hotspot.service
 
 [Service]

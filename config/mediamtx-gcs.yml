@@ -1,0 +1,10 @@
+# MediaMTX — RTSP for AP; ffmpeg publishes RTP->RTSP (path /stream)
+logLevel: warn
+logDestinations: [stdout]
+
+rtsp: yes
+rtspAddress: __AP_IP__:__RTSP_PORT__
+
+paths:
+  stream:
+    source: publisher

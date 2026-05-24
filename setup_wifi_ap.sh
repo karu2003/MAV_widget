@@ -36,7 +36,12 @@ install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-video-rtsp.sh"
 install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
+install -m 755 "$PROJECT_DIR/scripts/install-mediamtx.sh" "$INSTALL_BIN/install-mediamtx.sh"
+install -m 755 "$PROJECT_DIR/scripts/video-udp-relay.py" "$INSTALL_BIN/video-udp-relay.py"
+install -m 644 "$PROJECT_DIR/systemd/gcs-video-udp-relay.service" "$SYSTEMD_DIR/gcs-video-udp-relay.service"
 install -m 644 "$PROJECT_DIR/config/gcs-ap-streaming.conf" /etc/default/gcs-ap-streaming
+install -m 644 "$PROJECT_DIR/config/mediamtx-gcs.yml" /etc/mediamtx-gcs.yml.template
+"$INSTALL_BIN/install-mediamtx.sh" || echo "WARN: MediaMTX install skipped (no network?) — run: sudo install-mediamtx.sh"
 install -m 644 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" /usr/share/applications/gcs-toggle-ap.desktop
 mkdir -p "${DESKTOP_HOME}/Desktop"
 install -m 755 "$PROJECT_DIR/config/gcs-toggle-ap.desktop" "${DESKTOP_HOME}/Desktop/gcs-toggle-ap.desktop"
@@ -61,9 +66,9 @@ install -m 644 "$PROJECT_DIR/systemd/gcs-video-rtsp.service" "$SYSTEMD_DIR/gcs-v
 systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable drone-hotspot.service gcs-video-rtsp.service
+systemctl enable drone-hotspot.service gcs-video-udp-relay.service gcs-video-rtsp.service
 systemctl restart drone-hotspot.service
-systemctl start gcs-video-rtsp.service 2>/dev/null || true
+systemctl restart gcs-video-udp-relay.service gcs-video-rtsp.service 2>/dev/null || true
 "$INSTALL_BIN/setup-nat.sh"
 
 # Passwordless sudo for GCS scripts (ubuntu user)
