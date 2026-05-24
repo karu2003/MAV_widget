@@ -228,7 +228,7 @@ class ApTray:
         )
         if os.path.isfile(restore):
             subprocess.Popen(
-                ["sudo", restore],
+                ["sudo", restore, "--recover"],
                 start_new_session=True,
             )
 

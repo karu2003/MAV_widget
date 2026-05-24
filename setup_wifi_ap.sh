@@ -50,7 +50,9 @@ if command -v gtk-update-icon-cache >/dev/null; then
     gtk-update-icon-cache -f /usr/local/share/icons/hicolor 2>/dev/null || true
 fi
 install -m 755 "$PROJECT_DIR/scripts/start-video-rtsp.sh" "$INSTALL_BIN/start-video-rtsp.sh"
+install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent.sh" "$INSTALL_BIN/wlan-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
+install -m 755 "$PROJECT_DIR/scripts/fix-wlan-after-ap.sh" "$INSTALL_BIN/fix-wlan-after-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/restart-ap-streaming.sh" "$INSTALL_BIN/restart-ap-streaming.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-ap-stream.sh" "$INSTALL_BIN/check-ap-stream.sh"
 install -m 755 "$PROJECT_DIR/scripts/check-gcs-link.sh" "$INSTALL_BIN/check-gcs-link.sh"
@@ -99,6 +101,7 @@ fi
 echo "AP control: gcs-ap-tray.service (top panel icon only)"
 
 mkdir -p /var/lib/gcs-ap
+"$INSTALL_BIN/ensure-hostapd-concurrent.sh" 2>/dev/null || true
 
 # Passwordless sudo (before long network setup — do not interrupt before this)
 cat > "$SUDOERS_FILE" <<'EOF'
@@ -117,6 +120,7 @@ ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-hotspot.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/gcs-ap-manual-off.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restart-ap-streaming.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restore-wlan-client.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/fix-wlan-after-ap.sh
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl start gcs-video-rtsp.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl stop gcs-video-rtsp.service
 ubuntu ALL=(root) NOPASSWD: /usr/bin/systemctl restart gcs-video-rtsp.service

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Set GCS_WLAN_CONNECTION in /etc/default/gcs-ap-streaming (run as root).
+# Optional: prefer one NetworkManager profile for wlan0 (any profile works if unset).
 
 set -euo pipefail
 
@@ -18,10 +18,18 @@ fi
 if [[ $# -ge 1 ]]; then
     PROFILE="$1"
 else
-    echo "Wi‑Fi profiles (802-11-wireless):"
+    echo "Wi‑Fi profiles (optional preference — AP works with any profile):"
     nmcli -t -f NAME,TYPE connection show | awk -F: '$2=="802-11-wireless"{print "  "$1}'
     echo ""
-    read -r -p "Profile name for wlan0 client: " PROFILE
+    read -r -p "Preferred profile (empty = auto / any): " PROFILE
+fi
+
+if [[ -z "${PROFILE:-}" ]]; then
+    if grep -q '^GCS_WLAN_CONNECTION=' "$CONF"; then
+        sed -i 's/^GCS_WLAN_CONNECTION=.*/GCS_WLAN_CONNECTION=/' "$CONF"
+    fi
+    echo "Cleared GCS_WLAN_CONNECTION — wlan0 will use any saved profile (autoconnect first)"
+    exit 0
 fi
 
 if ! nmcli -t -f NAME connection show | grep -Fxq "$PROFILE"; then
@@ -35,6 +43,5 @@ else
     echo "GCS_WLAN_CONNECTION=${PROFILE}" >>"$CONF"
 fi
 
-echo "Set GCS_WLAN_CONNECTION=${PROFILE} in $CONF"
-echo "Reconnect: sudo /usr/local/bin/restore-wlan-client.sh"
-echo "Or toggle AP off/on to apply on next AP start."
+echo "Preferred profile: ${PROFILE} (others still tried if this fails)"
+echo "Apply: sudo systemctl restart drone-hotspot  # or toggle AP"

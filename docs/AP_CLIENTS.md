@@ -85,13 +85,56 @@ AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone rad
 
 ## Concurrent AP + wlan0 client
 
-The GCS uses **uap0** (AP for phones) and **wlan0** (internet uplink) on the same radio. After boot, `restore-wlan-client.sh` reconnects wlan0 via NetworkManager.
+**uap0** (AP for phones) and **wlan0** (internet) share one radio — **one channel only** (`#channels <= 1` in `iw phy`). AP **automatically uses the same channel** as the connected client (2.4 or 5 GHz).
 
-Set your home/office Wi‑Fi profile in `/etc/default/gcs-ap-streaming`:
+No manual setup required: scripts try all NetworkManager Wi‑Fi profiles (autoconnect first). Optional preference:
 
 ```bash
+# optional — try this profile first
 GCS_WLAN_CONNECTION=Coco
 ```
 
-(Use `nmcli connection show` to list profiles; do not use the AP SSID from hostapd.)
+### Boot / AP on sequence
+
+1. Connect **wlan0** to any saved profile (Coco, Vodafone, …).
+2. Read channel + band → configure **hostapd** (`hw_mode` + `channel`).
+3. Start **uap0** AP.
+4. Reconnect **wlan0** on the same channel if it dropped.
+
+Tray: **Reconnect Wi‑Fi client (wlan0)**.
+
+```bash
+check-gcs-link.sh
+iw dev
+```
+
+### Limits
+
+| Case | Behaviour |
+|------|-----------|
+| Any saved NM profile | Auto-tried; first success wins |
+| AP on channel N | Client must use a network on **same channel N** |
+| Router on different channel | Not visible while AP is on — pick another profile or turn AP off briefly |
+| `GCS_WLAN_CONNECTION` | Optional priority, not required |
+
+Do not use the AP SSID (CaimanHS) as client profile.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| AP won't start, `unknown configuration item 'noscan'` | `sudo ensure-hostapd-concurrent.sh` (removes invalid `noscan` from hostapd 2.10) |
+| Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
+| Only AP or only Wi‑Fi works | `sudo ./scripts/install-ap-tray.sh` then toggle AP |
+| `journalctl -u hostapd` shows channel errors | wlan0 must connect first; AP copies its channel |
+
+Install/update scripts:
+
+```bash
+cd ~/MAV_widget
+sudo ./scripts/install-ap-tray.sh
+sudo ./scripts/ensure-hostapd-concurrent.sh
+sudo systemctl reset-failed hostapd drone-hotspot
+sudo systemctl restart drone-hotspot
+```
 

@@ -19,9 +19,11 @@ install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/stop-ap-user.sh" "$INSTALL_BIN/stop-ap-user.sh"
 install -m 755 "$PROJECT_DIR/scripts/stop-drone-hotspot.sh" "$INSTALL_BIN/stop-drone-hotspot.sh"
 install -m 755 "$PROJECT_DIR/scripts/gcs-ap-manual-off.sh" "$INSTALL_BIN/gcs-ap-manual-off.sh"
+install -m 755 "$PROJECT_DIR/scripts/fix-wlan-after-ap.sh" "$INSTALL_BIN/fix-wlan-after-ap.sh"
+install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent.sh" "$INSTALL_BIN/wlan-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
+install -m 755 "$PROJECT_DIR/scripts/ensure-hostapd-concurrent.sh" "$INSTALL_BIN/ensure-hostapd-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/configure-wlan-client.sh" "$INSTALL_BIN/configure-wlan-client.sh"
-install -m 755 "$PROJECT_DIR/scripts/check-gcs-link.sh" "$INSTALL_BIN/check-gcs-link.sh"
 install -m 755 "$PROJECT_DIR/scripts/gcs-ap-tray.py" "$INSTALL_BIN/gcs-ap-tray.py"
 mkdir -p /var/lib/gcs-ap
 
@@ -39,6 +41,7 @@ if [[ ! -f "$SUDOERS_FILE" ]] || ! grep -q 'toggle-ap.sh' "$SUDOERS_FILE" 2>/dev
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-ap-user.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/restore-wlan-client.sh
+ubuntu ALL=(root) NOPASSWD: /usr/local/bin/fix-wlan-after-ap.sh
 EOF
     chmod 440 "$SUDOERS_FILE"
 fi

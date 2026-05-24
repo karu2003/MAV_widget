@@ -1,18 +1,20 @@
 #!/bin/bash
-# Create uap0 AP interface and start hostapd + dnsmasq.
+# Create uap0 AP interface and start hostapd + dnsmasq (concurrent STA + AP).
 
 set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=scripts/wlan-concurrent.sh
+source "${SCRIPT_DIR}/wlan-concurrent.sh"
 
 if [[ -f /var/lib/gcs-ap/manual-off ]]; then
     echo "[drone-hotspot] Manual OFF flag set — skip start (use toggle-ap to enable)"
     exit 0
 fi
 
-WLAN="${WLAN:-wlan0}"
 AP="${AP:-uap0}"
 AP_IP="${AP_IP:-192.168.54.1/24}"
 AP_MAC="${AP_MAC:-ae:9b:01:1a:55:cc}"
-HOSTAPD_CONF="${HOSTAPD_CONF:-/etc/hostapd/drone-hotspot.conf}"
 
 log() { echo "[drone-hotspot] $*"; }
 
@@ -28,44 +30,6 @@ wait_for_wlan() {
     return 1
 }
 
-load_streaming_conf() {
-    CONF="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
-    if [[ -f "$CONF" ]]; then
-        # shellcheck disable=SC1090
-        source "$CONF"
-    fi
-}
-
-preconnect_wlan() {
-    load_streaming_conf
-    [[ -n "${GCS_WLAN_CONNECTION:-}" ]] || return 0
-    if ! command -v nmcli >/dev/null 2>&1; then
-        return 0
-    fi
-    log "Pre-connect $WLAN (${GCS_WLAN_CONNECTION}) for AP channel sync"
-    nmcli radio wifi on 2>/dev/null || true
-    nmcli device set "$WLAN" managed yes 2>/dev/null || true
-    ip link set "$WLAN" up 2>/dev/null || true
-    if nmcli -w 30 connection up "${GCS_WLAN_CONNECTION}" ifname "$WLAN" 2>/dev/null; then
-        ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
-        log "wlan0 connected on channel ${ch:-?}"
-    else
-        log "WARN: pre-connect ${GCS_WLAN_CONNECTION} failed (AP will use default channel 6)"
-    fi
-}
-
-sync_channel() {
-    local channel
-    channel="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
-    if [[ -n "$channel" ]]; then
-        log "Sync AP channel to wlan0 channel $channel"
-        sed -i "s/^channel=.*/channel=$channel/" "$HOSTAPD_CONF"
-    else
-        log "wlan0 has no channel, using default channel 6"
-        sed -i "s/^channel=.*/channel=6/" "$HOSTAPD_CONF"
-    fi
-}
-
 stop_services() {
     if systemctl is-active --quiet dnsmasq; then
         log "Stopping dnsmasq"
@@ -77,6 +41,18 @@ stop_services() {
     fi
 }
 
+preconnect_wlan() {
+    if ! command -v nmcli >/dev/null 2>&1; then
+        return 0
+    fi
+    log "Connect wlan0 client before AP (any saved profile)"
+    if wlan_connect_client; then
+        log "wlan0 on channel $(wlan_ap_channel) — AP will match"
+    else
+        log "WARN: wlan0 not connected yet; AP uses last known or default channel"
+    fi
+}
+
 setup_interface() {
     log "Waiting for $WLAN..."
     wait_for_wlan
@@ -84,6 +60,11 @@ setup_interface() {
     stop_services
 
     preconnect_wlan
+
+    local channel
+    channel="$(wlan_ap_channel)"
+    wlan_apply_hostapd_rf "$channel"
+    log "AP will use channel ${channel} (same radio as wlan0 client)"
 
     ip link set "$WLAN" up || true
 
@@ -107,11 +88,18 @@ setup_interface() {
 }
 
 start_services() {
-    sync_channel
-
     log "Starting hostapd"
-    systemctl start hostapd
-    sleep 1
+    if ! systemctl start hostapd; then
+        log "ERROR: hostapd failed — check: journalctl -u hostapd -n 20"
+        log "  Common fix: sudo ensure-hostapd-concurrent.sh && remove noscan from hostapd conf"
+        return 1
+    fi
+    sleep 2
+
+    if ! systemctl is-active --quiet hostapd; then
+        log "ERROR: hostapd not active"
+        return 1
+    fi
 
     log "Starting dnsmasq"
     systemctl start dnsmasq
@@ -119,31 +107,35 @@ start_services() {
     if [[ -x /usr/local/bin/setup-nat.sh ]]; then
         log "Applying NAT / forwarding"
         /usr/local/bin/setup-nat.sh || log "WARN: setup-nat failed"
-    elif [[ -x "$(dirname "$0")/setup-nat.sh" ]]; then
+    elif [[ -x "${SCRIPT_DIR}/setup-nat.sh" ]]; then
         log "Applying NAT / forwarding"
-        "$(dirname "$0")/setup-nat.sh" || log "WARN: setup-nat failed"
+        "${SCRIPT_DIR}/setup-nat.sh" || log "WARN: setup-nat failed"
     fi
 }
 
 restore_wlan_client() {
     if [[ -x /usr/local/bin/restore-wlan-client.sh ]]; then
-        timeout 45 /usr/local/bin/restore-wlan-client.sh || log "WARN: wlan0 client restore failed"
-    elif [[ -x "$(dirname "$0")/restore-wlan-client.sh" ]]; then
-        timeout 45 "$(dirname "$0")/restore-wlan-client.sh" || log "WARN: wlan0 client restore failed"
+        timeout 120 /usr/local/bin/restore-wlan-client.sh
+    else
+        timeout 120 "${SCRIPT_DIR}/restore-wlan-client.sh"
     fi
 }
 
 setup_interface
-start_services
+if ! start_services; then
+    log "WARN: AP services failed — wlan0 client may still work"
+    exit 1
+fi
 
-# Do not block systemd ExecStart — nmcli can hang and prevent ExecStop on stop.
-restore_wlan_client &
+if ! restore_wlan_client; then
+    log "WARN: wlan0 client restore failed (AP OK; retry from tray: Reconnect Wi‑Fi client)"
+fi
 
 if [[ -x /usr/local/bin/restart-ap-streaming.sh ]]; then
     /usr/local/bin/restart-ap-streaming.sh || log "WARN: AP streaming restart failed"
-elif [[ -x "$(dirname "$0")/restart-ap-streaming.sh" ]]; then
-    "$(dirname "$0")/restart-ap-streaming.sh" || log "WARN: AP streaming restart failed"
+elif [[ -x "${SCRIPT_DIR}/restart-ap-streaming.sh" ]]; then
+    "${SCRIPT_DIR}/restart-ap-streaming.sh" || log "WARN: AP streaming restart failed"
 fi
 
 SSID="$(grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || echo 'AP')"
-log "AP ready: SSID ${SSID} on $AP ($AP_IP)"
+log "AP ready: SSID ${SSID} on $AP ($AP_IP), wlan0 $(nmcli -t -f STATE device show "$WLAN" 2>/dev/null | head -1 || echo unknown)"

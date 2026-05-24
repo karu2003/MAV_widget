@@ -22,9 +22,18 @@ if ip link show wlan0 &>/dev/null; then
         ip -br addr show wlan0 | awk '{print "       "$0}'
     else
         fail "wlan0 not connected (state=$state)"
-        echo "       Set GCS_WLAN_CONNECTION=YourProfile in /etc/default/gcs-ap-streaming"
-        echo "       Then: sudo /usr/local/bin/restore-wlan-client.sh"
+    ap_ch=""
+    if ip link show uap0 &>/dev/null 2>/dev/null; then
+        ap_ch="$(iw dev uap0 info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+        [[ -n "$ap_ch" ]] && echo "       AP channel ${ap_ch} — client must use same channel"
+    fi
+    echo "       sudo restore-wlan-client.sh   # or tray: Reconnect Wi‑Fi client"
         nmcli -t -f NAME,TYPE connection show 2>/dev/null | awk -F: '$2=="802-11-wireless"{print "       profile: "$1}'
+        if [[ -n "$ap_ch" ]]; then
+            echo "       Networks visible on wlan0 (channel ${ap_ch} only while AP is on):"
+            nmcli -f IN-USE,SSID,CHAN,SIGNAL device wifi list ifname wlan0 2>/dev/null \
+                | head -6 | sed 's/^/         /' || true
+        fi
     fi
 else
     fail "wlan0 missing"
@@ -34,7 +43,8 @@ echo ""
 # AP (uap0)
 if systemctl is-active --quiet hostapd 2>/dev/null && ip link show uap0 &>/dev/null; then
     ssid="$(grep -E '^ssid=' /etc/hostapd/drone-hotspot.conf 2>/dev/null | cut -d= -f2- || echo '?')"
-    ok "AP active ($ssid on uap0)"
+    ap_ch="$(iw dev uap0 info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+    ok "AP active ($ssid on uap0, channel ${ap_ch:-?})"
 else
     echo "  --   AP off (uap0/hostapd inactive)"
 fi
