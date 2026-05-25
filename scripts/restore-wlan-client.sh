@@ -1,5 +1,6 @@
 #!/bin/bash
-# Reconnect wlan0 (STA). Use --recover after AP off to reset the radio.
+# Reconnect wlan0 (STA). --recover resets the radio after AP off, but must not
+# edit saved NetworkManager Wi-Fi profiles (no channel/band/bssid/keyfile churn).
 
 set -euo pipefail
 

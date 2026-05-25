@@ -4,6 +4,7 @@ ConditionPathExists=!/var/lib/gcs-ap/manual-off
 
 [Service]
 Type=oneshot
+TimeoutStartSec=50
 ExecStart=/usr/local/bin/wlan-concurrent-keepalive.sh
 
 [Install]

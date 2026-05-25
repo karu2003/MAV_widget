@@ -17,19 +17,28 @@ DESKTOP_HOME="$(getent passwd "${DESKTOP_USER}" | cut -d: -f6)"
 DESKTOP_UID="$(id -u "${DESKTOP_USER}")"
 
 install -m 755 "$PROJECT_DIR/scripts/toggle-ap.sh" "$INSTALL_BIN/toggle-ap.sh"
+install -m 755 "$PROJECT_DIR/scripts/install-ap-tray.sh" "$INSTALL_BIN/install-ap-tray.sh"
+install -m 755 "$PROJECT_DIR/scripts/start-drone-hotspot.sh" "$INSTALL_BIN/start-drone-hotspot.sh"
 install -m 755 "$PROJECT_DIR/scripts/stop-ap-user.sh" "$INSTALL_BIN/stop-ap-user.sh"
 install -m 755 "$PROJECT_DIR/scripts/stop-drone-hotspot.sh" "$INSTALL_BIN/stop-drone-hotspot.sh"
 install -m 755 "$PROJECT_DIR/scripts/gcs-ap-manual-off.sh" "$INSTALL_BIN/gcs-ap-manual-off.sh"
 install -m 755 "$PROJECT_DIR/scripts/fix-wlan-after-ap.sh" "$INSTALL_BIN/fix-wlan-after-ap.sh"
 install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent.sh" "$INSTALL_BIN/wlan-concurrent.sh"
+install -m 755 "$PROJECT_DIR/scripts/wlan-concurrent-keepalive.sh" "$INSTALL_BIN/wlan-concurrent-keepalive.sh"
 install -m 755 "$PROJECT_DIR/scripts/restore-wlan-client.sh" "$INSTALL_BIN/restore-wlan-client.sh"
+install -m 755 "$PROJECT_DIR/scripts/setup-nat.sh" "$INSTALL_BIN/setup-nat.sh"
+install -m 755 "$PROJECT_DIR/scripts/check-nat.sh" "$INSTALL_BIN/check-nat.sh"
+install -m 755 "$PROJECT_DIR/scripts/cleanup-nm-wifi-duplicates.sh" "$INSTALL_BIN/cleanup-nm-wifi-duplicates.sh"
 install -m 755 "$PROJECT_DIR/scripts/ensure-hostapd-concurrent.sh" "$INSTALL_BIN/ensure-hostapd-concurrent.sh"
 install -m 755 "$PROJECT_DIR/scripts/configure-wlan-client.sh" "$INSTALL_BIN/configure-wlan-client.sh"
 install -m 755 "$PROJECT_DIR/scripts/gcs-ap-tray.py" "$INSTALL_BIN/gcs-ap-tray.py"
 mkdir -p /var/lib/gcs-ap
 touch /var/lib/gcs-ap/manual-off
 
+install -m 644 "$PROJECT_DIR/systemd/drone-hotspot.service" "$SYSTEMD_DIR/drone-hotspot.service"
 install -m 644 "$PROJECT_DIR/systemd/gcs-ap-default-off.service" "$SYSTEMD_DIR/gcs-ap-default-off.service"
+install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.service" "$SYSTEMD_DIR/gcs-wlan-keepalive.service"
+install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.timer" "$SYSTEMD_DIR/gcs-wlan-keepalive.timer"
 systemctl daemon-reload
 systemctl enable gcs-ap-default-off.service
 systemctl start gcs-ap-default-off.service

@@ -150,6 +150,11 @@ echo "sudoers: $SUDOERS_FILE (toggle-ap.sh = passwordless AP on/off from tray)"
 mkdir -p /etc/dnsmasq.d
 install -m 644 "$PROJECT_DIR/config/dnsmasq-drone-hotspot.conf" /etc/dnsmasq.d/drone-hotspot.conf
 
+# Disable NM background scans (off-channel scans disrupt single-radio STA+AP).
+mkdir -p /etc/NetworkManager/conf.d
+install -m 644 "$PROJECT_DIR/config/gcs-concurrent-wifi.conf" \
+    /etc/NetworkManager/conf.d/gcs-concurrent-wifi.conf
+
 MAV_WIDGET_DIR="$PROJECT_DIR" "$PROJECT_DIR/scripts/setup_network.sh"
 
 sed "s|__PROJECT_DIR__|$PROJECT_DIR|g" \

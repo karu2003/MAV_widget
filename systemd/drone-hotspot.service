@@ -8,10 +8,10 @@ ConditionPathExists=!/var/lib/gcs-ap/manual-off
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-TimeoutStartSec=120
+TimeoutStartSec=180
 TimeoutStopSec=30
 ExecStart=/usr/local/bin/start-drone-hotspot.sh
-ExecStop=/usr/local/bin/stop-drone-hotspot.sh
+ExecStop=/usr/local/bin/stop-drone-hotspot.sh --no-restore
 
 [Install]
 WantedBy=multi-user.target

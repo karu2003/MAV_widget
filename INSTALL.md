@@ -65,7 +65,7 @@ phy#0  (#channels <= 1)
   uap0   AP       →  CaimanHS (phones)
 ```
 
-**Same channel rule** — AP always matches the router channel:
+**Same channel rule** — if wlan0 is connected, AP matches the router channel:
 
 | Router (wlan0) | AP (hostapd / uap0) |
 |----------------|---------------------|
@@ -74,6 +74,11 @@ phy#0  (#channels <= 1)
 | 5 GHz ch 36    | `channel=36`, `hw_mode=a` |
 
 Different channels simultaneously — **not possible** on this hardware.
+
+If wlan0 is not connected when AP starts, AP chooses the least busy 2.4 GHz
+channel (`1/6/11`) in standalone mode. In standalone mode keepalive does not
+touch wlan0 until AP is off. AP startup never writes channel/band/BSSID pins
+into saved NetworkManager Wi-Fi profiles.
 
 ### 4.1 First-time AP install
 

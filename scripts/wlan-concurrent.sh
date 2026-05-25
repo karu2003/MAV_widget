@@ -8,6 +8,7 @@ AP="${AP:-uap0}"
 HOSTAPD_CONF="${HOSTAPD_CONF:-/etc/hostapd/drone-hotspot.conf}"
 GCS_AP_STATE="${GCS_AP_STATE:-/var/lib/gcs-ap}"
 STA_STATE_FILE="${GCS_AP_STATE}/wlan-sta.state"
+AP_MODE_FILE="${GCS_AP_STATE}/ap-mode"
 DEFAULT_AP_CHANNEL="${DEFAULT_AP_CHANNEL:-6}"
 DEFAULT_AP_HW_MODE="${DEFAULT_AP_HW_MODE:-g}"
 WLAN_STA_WAIT_SEC="${WLAN_STA_WAIT_SEC:-30}"
@@ -49,6 +50,14 @@ wlan_ap_ssid() {
 
 wlan_is_ap_active() {
     ip link show "$AP" &>/dev/null && systemctl is-active --quiet hostapd 2>/dev/null
+}
+
+wlan_ap_mode() {
+    if [[ -f "$AP_MODE_FILE" ]]; then
+        head -1 "$AP_MODE_FILE"
+    else
+        echo unknown
+    fi
 }
 
 # Channel for concurrent STA+AP (prefer live AP/uap0 when AP is running).
@@ -130,31 +139,56 @@ wlan_read_sta_rf() {
     return 0
 }
 
-# Wait for wlan0 client, then set hostapd channel/hw_mode to match (or defaults).
-wlan_sync_ap_channel_to_sta() {
-    local i ch hw freq connected=0
+# Pick a low-congestion AP channel when there is no active wlan0 client.
+# Keep this to 2.4 GHz non-overlapping channels for phone compatibility and to
+# avoid DFS/CAC delays on 5 GHz AP startup.
+wlan_choose_free_ap_channel() {
+    local ch best_ch="${DEFAULT_AP_CHANNEL}" best_score=999 score
+    declare -A counts=([1]=0 [6]=0 [11]=0)
 
-    wlan_log "Waiting for ${WLAN} client — AP will use the same channel"
-    for i in $(seq 1 "$WLAN_STA_WAIT_SEC"); do
-        if wlan_sta_is_linked; then
-            connected=1
-            break
+    nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+    sleep 2
+
+    while IFS= read -r ch; do
+        [[ "$ch" =~ ^[0-9]+$ ]] || continue
+        case "$ch" in
+            1|2|3) counts[1]=$((counts[1] + 1)) ;;
+            4|5|6|7|8) counts[6]=$((counts[6] + 1)) ;;
+            9|10|11|12|13) counts[11]=$((counts[11] + 1)) ;;
+        esac
+    done < <(nmcli -t -f CHAN device wifi list ifname "$WLAN" 2>/dev/null)
+
+    for ch in 1 6 11; do
+        score="${counts[$ch]:-0}"
+        if (( score < best_score )); then
+            best_score="$score"
+            best_ch="$ch"
         fi
-        sleep 1
     done
 
-    if [[ "$connected" -eq 1 ]]; then
+    echo "$best_ch"
+}
+
+# Set hostapd channel/hw_mode:
+# - if wlan0 is connected, AP must use the current wlan0 channel
+# - if wlan0 is not connected, AP chooses a free standalone channel
+# This must never write channel/band/BSSID pins into NetworkManager profiles.
+wlan_sync_ap_channel_to_sta() {
+    local ch hw freq
+
+    if wlan_sta_is_linked; then
         freq="$(iw dev "$WLAN" link 2>/dev/null | awk '/freq:/ {print $2; exit}')"
         ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
         hw="$(wlan_hw_mode_from_freq "$freq")"
         [[ -z "$ch" ]] && ch="${DEFAULT_AP_CHANNEL}"
-        wlan_log "Client active — freq=${freq} MHz, channel=${ch}, hw_mode=${hw}"
-    else
-        ch="${DEFAULT_AP_CHANNEL}"
-        hw="${DEFAULT_AP_HW_MODE}"
-        wlan_log "Client not connected — AP defaults: channel=${ch}, hw_mode=${hw}"
+        wlan_log "wlan0 connected — AP follows Wi-Fi channel=${ch}, hw_mode=${hw}"
+        wlan_apply_hostapd_rf "$ch" "$hw"
+        return 0
     fi
 
+    ch="$(wlan_choose_free_ap_channel)"
+    hw="$(wlan_hw_mode_for_channel "$ch")"
+    wlan_log "wlan0 not connected — AP standalone channel=${ch}, hw_mode=${hw}"
     wlan_apply_hostapd_rf "$ch" "$hw"
 }
 
@@ -190,7 +224,8 @@ wlan_save_sta_state() {
 
 wlan_ensure_hostapd_concurrent_opts() {
     [[ -f "$HOSTAPD_CONF" ]] || return 0
-    sed -i '/^noscan=/d' "$HOSTAPD_CONF"
+    # beacon_int=100 is needed for concurrent STA+AP to keep beacons regular.
+    # noscan is NOT supported in hostapd v2.x and must not be added.
     grep -q '^beacon_int=' "$HOSTAPD_CONF" || echo 'beacon_int=100' >>"$HOSTAPD_CONF"
 }
 
@@ -210,124 +245,67 @@ wlan_apply_hostapd_rf() {
     wlan_log "hostapd synced: hw_mode=${hw_mode} channel=${channel} (${band}, same as ${WLAN} client)"
 }
 
-wlan_pin_nm_connection() {
-    local name="$1"
-    local channel="$2"
-    local band
-    band="$(wlan_band_for_channel "$channel")"
-    nmcli connection modify "$name" connection.interface-name "$WLAN" 2>/dev/null || true
-    nmcli connection modify "$name" 802-11-wireless.band "$band" 2>/dev/null || true
-    nmcli connection modify "$name" 802-11-wireless.channel "$channel" 2>/dev/null || true
-}
-
-wlan_nm_keyfile_for_connection() {
-    local name="$1"
-    local keyfile uuid path
-
-    keyfile="$(nmcli -g connection.filename connection show "$name" 2>/dev/null || true)"
-    if [[ -n "$keyfile" && -f "$keyfile" ]]; then
-        echo "$keyfile"
-        return 0
-    fi
-
-    path="/etc/NetworkManager/system-connections/${name}.nmconnection"
-    if [[ -f "$path" ]]; then
-        echo "$path"
-        return 0
-    fi
-
-    uuid="$(nmcli -g connection.uuid connection show "$name" 2>/dev/null || true)"
-    if [[ -n "$uuid" ]]; then
-        for keyfile in /etc/NetworkManager/system-connections/*.nmconnection; do
-            [[ -f "$keyfile" ]] || continue
-            grep -q "^uuid=${uuid}$" "$keyfile" 2>/dev/null && {
-                echo "$keyfile"
-                return 0
-            }
-        done
-    fi
-    return 1
-}
-
-wlan_keyfile_unpin_wifi() {
-    local name="$1"
-    local keyfile
-    keyfile="$(wlan_nm_keyfile_for_connection "$name" 2>/dev/null || true)"
-    [[ -n "$keyfile" && -f "$keyfile" ]] || return 0
-    sed -i \
-        -e '/^channel=/d' \
-        -e '/^band=/d' \
-        -e '/^bssid=/d' \
-        -e '/^seen-bssids=/d' \
-        "$keyfile"
-    nmcli connection reload 2>/dev/null || true
-}
-
-wlan_unpin_nm_connection() {
-    local name="$1"
-    # channel=0 is rejected on modify; empty string clears pinned channel/band.
-    nmcli connection modify "$name" \
-        802-11-wireless.channel "" \
-        802-11-wireless.band "" \
-        802-11-wireless.bssid "" \
-        802-11-wireless.cloned-mac-address "" 2>/dev/null || true
-    # seen-bssids cannot be cleared via nmcli; scrub keyfile (stale 2.4 GHz BSSID breaks 5 GHz).
-    wlan_keyfile_unpin_wifi "$name"
-}
-
-# Clear channel/band/bssid pins left from concurrent AP mode (AP off / recovery).
-wlan_unpin_all_nm_wifi() {
-    local name type
-    while IFS=: read -r name type; do
-        [[ "$type" != "802-11-wireless" ]] && continue
-        wlan_unpin_nm_connection "$name"
-    done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
-    wlan_log "Cleared NM channel/band pins on all Wi‑Fi profiles"
-}
-
-# Reset Wi‑Fi after AP mode (driver often needs this before STA works again).
+# Reset Wi‑Fi after AP mode without editing saved NetworkManager profiles.
 wlan_recover_radio() {
     wlan_log "Resetting ${WLAN} radio after AP"
+    local i state
 
-    systemctl stop hostapd dnsmasq 2>/dev/null || true
+    # 1. Stop AP services if still running (idempotent — caller may have done this).
+    systemctl is-active --quiet hostapd 2>/dev/null \
+        && systemctl stop hostapd 2>/dev/null || true
+    systemctl is-active --quiet dnsmasq 2>/dev/null \
+        && systemctl stop dnsmasq  2>/dev/null || true
+
+    # 2. Remove virtual AP interface — poll until confirmed gone.
     if ip link show "$AP" &>/dev/null; then
+        ip link set "$AP" down 2>/dev/null || true
         iw dev "$AP" del 2>/dev/null || true
-        sleep 1
+        for i in $(seq 1 5); do
+            ip link show "$AP" &>/dev/null || break
+            sleep 1
+        done
     fi
 
-    nmcli device disconnect "$WLAN" 2>/dev/null || true
+    # 3. Take wlan0 out of NM control for the radio reset.
     nmcli device set "$WLAN" managed no 2>/dev/null || true
     ip link set "$WLAN" down 2>/dev/null || true
-    sleep 1
 
-    rfkill unblock wifi 2>/dev/null || true
-    nmcli radio wifi off 2>/dev/null || true
-    sleep 2
-    nmcli radio wifi on 2>/dev/null || true
-    sleep 2
-
-    nmcli device set "$WLAN" managed yes 2>/dev/null || true
-    iw dev "$WLAN" set type managed 2>/dev/null || true
-    ip link set "$WLAN" up 2>/dev/null || true
-
-    wlan_unpin_all_nm_wifi
-
-    local i state
-    for i in $(seq 1 15); do
+    # 4. Poll until interface is DOWN — iw type change requires the interface to be down.
+    for i in $(seq 1 5); do
         state="$(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}')"
-        [[ "$state" == "UP" ]] && break
+        [[ "$state" != "UP" ]] && break
         sleep 1
     done
 
-    nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
-    sleep 3
+    # 5. Reset radio type to managed — MUST be done while the interface is DOWN.
+    iw dev "$WLAN" set type managed 2>/dev/null || true
 
+    # 6. Unblock radio.
+    rfkill unblock wifi 2>/dev/null || true
+
+    # 7. Return interface to NM — NM will bring wlan0 UP.
+    nmcli radio wifi on 2>/dev/null || true
+    nmcli device set "$WLAN" managed yes 2>/dev/null || true
+
+    # 8. Poll until UP; nudge with ip link set if NM is slow (≥3 s).
+    for i in $(seq 1 10); do
+        state="$(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}')"
+        [[ "$state" == "UP" ]] && break
+        [[ "$i" -eq 3 ]] && { ip link set "$WLAN" up 2>/dev/null || true; }
+        sleep 1
+    done
+
+    # 9. Fix TX power (MT7921: stuck at ~3 dBm after AP mode; requires interface UP).
     wlan_fix_radio_power
-    sleep 1
 
+    # 10. Trigger background scan — results ready by the time the connect loop starts.
+    nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+    sleep 2
+
+    state="$(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}')"
     local tp
     tp="$(iw dev "$WLAN" info 2>/dev/null | awk '/txpower/ {print $2; exit}')"
-    wlan_log "  ${WLAN} state: $(ip -br link show "$WLAN" 2>/dev/null | awk '{print $2}') txpower=${tp:-?}dBm"
+    wlan_log "  ${WLAN} state=${state} txpower=${tp:-?}dBm"
 }
 
 wlan_prepare_nm() {
@@ -335,9 +313,13 @@ wlan_prepare_nm() {
     nmcli device set "$WLAN" managed yes 2>/dev/null || true
     if ip link show "$AP" &>/dev/null; then
         nmcli device set "$AP" managed no 2>/dev/null || true
+        # While AP is running, only nudge TX power (no iw reg set — that can
+        # change channel constraints and disrupt uap0 clients).
+        iw dev "$WLAN" set txpower auto 2>/dev/null || true
+    else
+        wlan_fix_radio_power
     fi
     ip link set "$WLAN" up 2>/dev/null || true
-    wlan_fix_radio_power
 }
 
 wlan_profile_ssid() {
@@ -357,6 +339,39 @@ wlan_bssid_for_ssid() {
     done < <(nmcli -t -f BSSID,SSID device wifi list ifname "$WLAN" 2>/dev/null)
 }
 
+# Channel visible on wlan0 scan for SSID (no active connection needed).
+wlan_chan_for_ssid() {
+    local ssid="$1" line ch rest
+    while IFS= read -r line; do
+        ch="${line%%:*}"
+        [[ "$ch" =~ ^[0-9]+$ ]] || continue
+        rest="${line#*:}"
+        rest="${rest//\\:/:}"  # unescape \: \u2192 : in SSID field
+        [[ "$rest" == "$ssid" ]] || continue
+        echo "$ch"
+        return 0
+    done < <(nmcli -t -f CHAN,SSID device wifi list ifname "$WLAN" 2>/dev/null)
+}
+# BSSID visible on wlan0 scan for SSID on a specific channel.
+# In concurrent STA+AP mode both interfaces share one channel, so we must
+# connect wlan0 to a router BSSID that is on the AP's channel (not 5 GHz).
+wlan_bssid_for_ssid_on_channel() {
+    local ssid="$1" want_ch="$2"
+    local line bssid ch_part rest
+    while IFS= read -r line; do
+        # nmcli -t -f BSSID,CHAN,SSID: BSSID always 22 chars (AA\:BB\:CC\:DD\:EE\:FF)
+        [[ ${#line} -gt 22 && "${line:22:1}" == ":" ]] || continue
+        bssid="${line:0:22}"
+        bssid="${bssid//\\:/:}"      # unescape \: \u2192 :
+        rest="${line:23}"            # CHAN:SSID
+        ch_part="${rest%%:*}"        # channel number
+        rest="${rest#*:}"            # SSID
+        rest="${rest//\\:/:}"       # unescape SSID
+        [[ "$ch_part" == "$want_ch" && "$rest" == "$ssid" ]] || continue
+        echo "$bssid"
+        return 0
+    done < <(nmcli -t -f BSSID,CHAN,SSID device wifi list ifname "$WLAN" 2>/dev/null)
+}
 wlan_seen_has() {
     local seen="$1" name="$2"
     [[ "$seen" == "$name" || "$seen" == *"|${name}|"* || "$seen" == "${name}|"* || "$seen" == *"|${name}" ]]
@@ -411,32 +426,30 @@ wlan_client_profile_list() {
     done < <(nmcli -t -f NAME,TYPE connection show 2>/dev/null)
 }
 
-# When AP is on, prefer profiles whose SSID is visible on the locked channel.
+# When AP is on, use the profile saved before AP started — no scan needed
+# because the AP runs on the same channel the STA was already connected to.
 wlan_client_profile_list_for_ap() {
-    local profile ssid
-    declare -A visible=()
-    while IFS= read -r ssid; do
-        [[ -n "$ssid" ]] && visible["$ssid"]=1
-    done < <(nmcli -t -f SSID device wifi list ifname "$WLAN" 2>/dev/null)
+    local saved_profile ap_ssid
+    ap_ssid="$(wlan_ap_ssid)"
 
-    while IFS= read -r profile; do
-        [[ -z "$profile" ]] && continue
-        ssid="$(wlan_profile_ssid "$profile")"
-        [[ -n "$ssid" && -n "${visible[$ssid]:-}" ]] && echo "$profile"
-    done < <(wlan_client_profile_list)
+    if [[ -f "$STA_STATE_FILE" ]]; then
+        saved_profile="$(grep -E '^profile=' "$STA_STATE_FILE" 2>/dev/null | cut -d= -f2-)"
+        if [[ -n "$saved_profile" && "$saved_profile" != "$ap_ssid" ]] \
+            && nmcli -t -f NAME connection show 2>/dev/null | grep -Fxq "$saved_profile"; then
+            echo "$saved_profile"
+            return
+        fi
+    fi
 
-    while IFS= read -r profile; do
-        [[ -z "$profile" ]] && continue
-        ssid="$(wlan_profile_ssid "$profile")"
-        [[ -n "$ssid" && -n "${visible[$ssid]:-}" ]] && continue
-        echo "$profile"
-    done < <(wlan_client_profile_list)
+    # State file missing or stale — fall back to full list so keepalive can recover.
+    wlan_client_profile_list
 }
 
 wlan_try_connect_profile() {
     local profile="$1"
     local ap_active="${2:-false}"
-    local channel err ap_ssid saved_profile saved_bssid saved_ch band
+    local already_scanned="${3:-false}"
+    local channel err ap_ssid connect_timeout=30
 
     ap_ssid="$(wlan_ap_ssid)"
     if [[ -n "$ap_ssid" && "$profile" == "$ap_ssid" ]]; then
@@ -447,26 +460,42 @@ wlan_try_connect_profile() {
         return 1
     fi
 
-    nmcli connection modify "$profile" connection.interface-name "$WLAN" 2>/dev/null || true
-    wlan_unpin_nm_connection "$profile"
-
     local up_extra=()
     if [[ "$ap_active" == true ]]; then
         channel="$(wlan_ap_channel)"
         local pssid bssid
+        connect_timeout=20
         pssid="$(wlan_profile_ssid "$profile")"
-        wlan_pin_nm_connection "$profile" "$channel"
-        bssid="$(wlan_bssid_for_ssid "$pssid")"
+
+        # Priority 1: saved BSSID from before AP started — no scan at all.
+        bssid=""
+        if [[ -f "$STA_STATE_FILE" ]]; then
+            local _sv_profile _sv_bssid
+            _sv_profile="$(grep -E '^profile=' "$STA_STATE_FILE" 2>/dev/null | cut -d= -f2-)"
+            _sv_bssid="$(grep -E '^bssid=' "$STA_STATE_FILE" 2>/dev/null | cut -d= -f2-)"
+            if [[ "$_sv_profile" == "$profile" && -n "$_sv_bssid" ]]; then
+                bssid="$_sv_bssid"
+                wlan_log "  ${profile}: using saved BSSID ${bssid} (no scan)"
+            fi
+        fi
+
+        # Priority 2: scan cache only (no active rescan — off-channel scan disrupts AP).
+        if [[ -z "$bssid" ]]; then
+            bssid="$(wlan_bssid_for_ssid_on_channel "$pssid" "$channel")"
+            [[ -n "$bssid" ]] && wlan_log "  ${profile}: BSSID ${bssid} from cache (ch ${channel})"
+        fi
+
         if [[ -n "$bssid" ]]; then
-            nmcli connection modify "$profile" 802-11-wireless.bssid "$bssid" 2>/dev/null || true
             up_extra=(ap "$bssid")
-            wlan_log "  ${profile} (AP ch ${channel}, BSSID ${bssid})"
         else
-            wlan_log "  ${profile} (AP ch ${channel})"
+            wlan_log "  ${profile} skipped — BSSID unknown, no scan while AP is up"
+            return 1
         fi
     else
-        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
-        sleep 2
+        if [[ "$already_scanned" != true ]]; then
+            nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+            sleep 2
+        fi
         local pssid bssid
         pssid="$(wlan_profile_ssid "$profile")"
         bssid="$(wlan_bssid_for_ssid "$pssid")"
@@ -474,17 +503,17 @@ wlan_try_connect_profile() {
             up_extra=(ap "$bssid")
             wlan_log "  ${profile} (BSSID ${bssid})"
         else
-            wlan_log "  ${profile}"
+            # SSID not in current scan — short timeout to avoid a 45 s stall per profile.
+            connect_timeout=15
+            wlan_log "  ${profile} (SSID not visible, timeout=${connect_timeout}s)"
         fi
     fi
 
-    if err="$(nmcli -w 45 connection up "$profile" ifname "$WLAN" "${up_extra[@]}" 2>&1)"; then
-        wlan_unpin_nm_connection "$profile"
+    if err="$(nmcli -w "${connect_timeout}" connection up "$profile" ifname "$WLAN" "${up_extra[@]}" 2>&1)"; then
         wlan_save_sta_state "$profile"
         wlan_log "Connected: ${profile} ch=$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
         return 0
     fi
-    wlan_unpin_nm_connection "$profile"
     wlan_log "  failed: ${err}"
     return 1
 }
@@ -528,9 +557,11 @@ wlan_connect_client() {
 
     if [[ "$recover" == recover || "$recover" == --recover ]]; then
         wlan_recover_radio
+        # wlan_recover_radio() already handles: managed yes, link up, fix_power, rescan.
+        # Calling wlan_prepare_nm() would duplicate all of that — skip it after recover.
+    else
+        wlan_prepare_nm
     fi
-
-    wlan_prepare_nm
 
     if wlan_is_connected; then
         profile="$(nmcli -t -f CONNECTION device show "$WLAN" 2>/dev/null | head -1)"
@@ -541,20 +572,27 @@ wlan_connect_client() {
         fi
     fi
 
-    if [[ "$ap_active" == true ]]; then
-        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
-        sleep 2
-    fi
-
     wlan_log "Trying Wi‑Fi profiles (AP ${ap_active:+on}${ap_active:-off})..."
     if [[ "$ap_active" == true ]]; then
         profiles() { wlan_client_profile_list_for_ap; }
     else
         profiles() { wlan_client_profile_list; }
     fi
+    # When AP is off: one upfront scan, then no per-profile rescans.
+    # When AP is on: no scan at all — saved BSSID is used directly.
+    local _scanned=false
+    if [[ "$ap_active" == true ]]; then
+        _scanned=true   # no scan in concurrent mode — use saved BSSID
+    elif [[ "$recover" == recover || "$recover" == --recover ]]; then
+        _scanned=true   # wlan_recover_radio() already scanned
+    else
+        nmcli device wifi rescan ifname "$WLAN" 2>/dev/null || true
+        sleep 2
+        _scanned=true
+    fi
     while IFS= read -r profile; do
         [[ -z "$profile" ]] && continue
-        if wlan_try_connect_profile "$profile" "$ap_active"; then
+        if wlan_try_connect_profile "$profile" "$ap_active" "$_scanned"; then
             return 0
         fi
     done < <(profiles)
@@ -565,7 +603,6 @@ wlan_connect_client() {
         wlan_log "  Both run at once on one channel — need a saved profile for a network on ch ${channel}"
         nmcli -f IN-USE,SSID,CHAN,BAND,SIGNAL device wifi list ifname "$WLAN" 2>/dev/null \
             | head -8 | sed 's/^/    /' || true
-        wlan_connect_nm_autoconnect && return 0
     else
         wlan_log "FAILED: no Wi‑Fi profile connected"
         wlan_connect_nm_autoconnect && return 0

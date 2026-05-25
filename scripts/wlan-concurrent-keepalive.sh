@@ -15,9 +15,33 @@ if ! wlan_is_ap_active; then
     exit 0
 fi
 
+if [[ "$(wlan_ap_mode)" != "concurrent" ]]; then
+    wlan_log "Keepalive: AP mode is $(wlan_ap_mode), not concurrent — skipping wlan0"
+    exit 0
+fi
+
 if wlan_is_connected; then
+    # Even when connected, fix TX power if MT7921 concurrent-mode bug left it
+    # at minimum (~3 dBm).  A weak TX causes frequent drops without NM noticing.
+    _tp="$(iw dev "${WLAN:-wlan0}" info 2>/dev/null | awk '/txpower/ {print int($2); exit}')"
+    if [[ -n "$_tp" && "$_tp" -le 5 ]]; then
+        wlan_log "Keepalive: connected but txpower=${_tp}dBm — restoring"
+        iw dev "${WLAN:-wlan0}" set txpower auto 2>/dev/null || true
+    fi
+    exit 0
+fi
+
+# Skip if a stop/start operation is holding the radio lock.
+WLAN_LOCK="${WLAN_LOCK:-/run/gcs-wlan.lock}"
+mkdir -p "$(dirname "$WLAN_LOCK")"
+exec 9>"$WLAN_LOCK"
+if ! flock -n 9; then
+    wlan_log "Keepalive: radio lock busy (stop/start in progress) — skipping"
     exit 0
 fi
 
 wlan_log "Keepalive: AP up, wlan0 down — reconnecting (concurrent mode)"
-wlan_connect_client
+# Keepalive must be quick and non-invasive. If no same-channel SSID is visible,
+# exit and let the next timer tick try again instead of holding wlan0 in NM loops.
+timeout 45 bash -c 'source "$1"; wlan_connect_client' _ "${SCRIPT_DIR}/wlan-concurrent.sh" \
+    || wlan_log "Keepalive: reconnect skipped/failed"

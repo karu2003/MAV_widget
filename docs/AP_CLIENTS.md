@@ -93,7 +93,7 @@ phy#0  one channel only (#channels <= 1)
   uap0   AP       →  CaimanHS                     — phones
 ```
 
-**Same channel rule** (before hostapd starts):
+**Same channel rule**:
 
 | Router (wlan0 client) | AP (uap0 / hostapd) |
 |----------------------|---------------------|
@@ -101,10 +101,15 @@ phy#0  one channel only (#channels <= 1)
 | 2.4 GHz channel 11   | channel 11, `hw_mode=g` |
 | 5 GHz channel 36     | channel 36, `hw_mode=a` |
 
-Different channels at the same time — **impossible** on this adapter.  
-`start-drone-hotspot.sh` connects wlan0, reads `freq` + `channel` from `iw dev wlan0 link`, then writes the same values to `/etc/hostapd/drone-hotspot.conf`. If wlan0 is not connected within 30s → default channel **6**, `hw_mode=g`.
+Different channels at the same time — **impossible** on this adapter.
 
-`gcs-wlan-keepalive.timer` reconnects wlan0 every 20s if it drops while AP stays on.
+AP channel policy:
+
+- If **wlan0 is already connected**, `start-drone-hotspot.sh` starts AP in `concurrent` mode: it reads `freq` + `channel` from `iw dev wlan0 link`, configures hostapd to the same channel, and keepalive may reconnect wlan0 only on that channel.
+- If **wlan0 is not connected**, AP starts in `standalone` mode on the least busy 2.4 GHz non-overlapping channel (`1/6/11`); keepalive does **not** touch wlan0 until AP is off.
+- AP channel selection never writes channel/band/BSSID pins into saved NetworkManager Wi-Fi profiles.
+
+`gcs-wlan-keepalive.timer` reconnects wlan0 every 20s only in `concurrent` mode.
 
 No manual setup required: scripts try all NetworkManager Wi‑Fi profiles (autoconnect first). Optional preference:
 
@@ -115,10 +120,10 @@ GCS_WLAN_CONNECTION=Coco
 
 ### Boot / AP on sequence
 
-1. Connect **wlan0** to any saved profile (Coco, …).
-2. Read channel + band → configure **hostapd** (`hw_mode` + `channel`).
+1. If **wlan0** is connected, read its channel; otherwise scan and choose a free AP channel.
+2. Configure **hostapd** (`hw_mode` + `channel`) only.
 3. Start **uap0** AP.
-4. Reconnect **wlan0** on the same channel if it dropped.
+4. In `concurrent` mode only, try to reconnect **wlan0** on the AP channel without modifying saved NM profiles.
 
 Tray: **Reconnect Wi‑Fi client (wlan0)**.
 
@@ -134,6 +139,7 @@ iw dev
 | Any saved NM profile | Auto-tried; first success wins |
 | AP on channel N | Client must use a network on **same channel N** |
 | Router on different channel | Not visible while AP is on — pick another profile or turn AP off briefly |
+| AP off | Saved Wi-Fi profile channels are untouched; wlan0 can reconnect normally |
 | `GCS_WLAN_CONNECTION` | Optional priority, not required |
 
 Do not use the AP SSID (CaimanHS) as client profile.
@@ -148,21 +154,23 @@ Do not use the AP SSID (CaimanHS) as client profile.
 |---------|-----|
 | AP won't start, `unknown configuration item 'noscan'` | `sudo ensure-hostapd-concurrent.sh` (removes invalid `noscan` from hostapd 2.10) |
 | Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
+| AP off also kills Wi‑Fi | Update stop scripts: `sudo ./scripts/install-ap-tray.sh`; AP stop now restores `wlan0` outside the systemd stop timeout |
+| `restore-wlan-client.sh --recover` breaks saved Wi‑Fi profile | Update scripts: restore is now non-mutating and no longer edits NM profile channel/band/bssid/keyfiles |
 | Only AP or only Wi‑Fi works | `sudo ./scripts/install-ap-tray.sh` then toggle AP |
-| `network could not be found` | Stale `seen-bssids` (NM 1.36 ignores keyfile sed) — `sudo ./scripts/repair-wifi-profile.sh Vodafone-5E06` |
+| `network could not be found` | First check txpower/radio. `repair-wifi-profile.sh` is safe now: it uses a temporary profile and keeps the original unless the replacement connects |
 
 **Recreate profile (fixes immutable `seen-bssids` on NM 1.36):**
 
 ```bash
-sudo ./scripts/repair-wifi-profile.sh Vodafone-5E06
+sudo ./scripts/repair-wifi-profile.sh CoCo
 # or manual:
-PSK=$(sudo nmcli -s -g 802-11-wireless-security.psk connection show Vodafone-5E06)
-sudo nmcli connection delete Vodafone-5E06
-sudo nmcli device wifi connect "Vodafone-5E06" password "$PSK" ifname wlan0 bssid 2C:58:4F:95:06:CB
+PSK=$(sudo nmcli -s -g 802-11-wireless-security.psk connection show CoCo)
+sudo nmcli connection delete CoCo
+sudo nmcli device wifi connect "CoCo" password "$PSK" ifname wlan0 bssid 2C:58:4F:95:06:CB
 iw dev wlan0 link
 ```
 
-Use the BSSID from `nmcli device wifi list ifname wlan0 | grep Vodafone` (5 GHz `…CB`, not old 2.4 GHz `…CA`).
+Use the BSSID from `nmcli device wifi list ifname wlan0 | grep CoCo` (5 GHz `…CB`, not old 2.4 GHz `…CA`).
 
 **Auth timeout / still `ssid-not-found` after recreate:** check `iw dev wlan0 info` — if `txpower` is ~**3 dBm**, restore it then reconnect:
 
@@ -170,7 +178,7 @@ Use the BSSID from `nmcli device wifi list ifname wlan0 | grep Vodafone` (5 GHz 
 sudo iw reg set DE
 sudo iw dev wlan0 set txpower auto
 iw dev wlan0 info | grep txpower
-sudo nmcli connection up Vodafone-5E06 ifname wlan0 ap 2C:58:4F:95:06:CB
+sudo nmcli connection up CoCo ifname wlan0 ap 2C:58:4F:95:06:CB
 ```
 
 If txpower stays at 3 dBm: `sudo modprobe -r mt7921e && sudo modprobe mt7921e`, then retry.

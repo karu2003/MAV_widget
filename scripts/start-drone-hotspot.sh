@@ -12,9 +12,17 @@ if [[ -f /var/lib/gcs-ap/manual-off ]]; then
     exit 0
 fi
 
+# Acquire exclusive radio lock — blocks keepalive from racing with AP startup.
+# FD 9 is inherited by child processes and released when this script exits.
+WLAN_LOCK="${WLAN_LOCK:-/run/gcs-wlan.lock}"
+mkdir -p "$(dirname "$WLAN_LOCK")"
+exec 9>"$WLAN_LOCK"
+flock -w 60 9 || echo "[drone-hotspot] WARN: radio lock timeout — proceeding anyway"
+
 AP="${AP:-uap0}"
 AP_IP="${AP_IP:-192.168.54.1/24}"
 AP_MAC="${AP_MAC:-ae:9b:01:1a:55:cc}"
+AP_MODE="standalone"
 
 log() { echo "[drone-hotspot] $*"; }
 
@@ -41,23 +49,33 @@ stop_services() {
     fi
 }
 
-preconnect_wlan() {
-    if ! command -v nmcli >/dev/null 2>&1; then
-        return 0
-    fi
-    log "Connect ${WLAN} before AP (AP channel = client channel)"
-    wlan_connect_client || log "WARN: pre-connect failed — will wait for link or use default ch ${DEFAULT_AP_CHANNEL}"
-}
-
 setup_interface() {
     log "Waiting for $WLAN..."
     wait_for_wlan
 
     stop_services
 
-    preconnect_wlan
+    mkdir -p "$GCS_AP_STATE"
+    if wlan_sta_is_linked; then
+        AP_MODE="concurrent"
+        # Save BSSID + profile + channel NOW, before hostapd sends DEAUTH.
+        # wlan_connect_client uses this to reconnect without any scanning.
+        local _cur_profile
+        _cur_profile="$(nmcli -t -f GENERAL.CONNECTION device show "$WLAN" 2>/dev/null \
+            | head -1 | cut -d: -f2-)"
+        [[ -z "$_cur_profile" || "$_cur_profile" == "--" ]] && _cur_profile="${GCS_WLAN_CONNECTION:-}"
+        wlan_save_sta_state "${_cur_profile:-}"
+        log "wlan0 connected — concurrent mode (saved profile=${_cur_profile:-?})"
+    else
+        AP_MODE="standalone"
+        log "wlan0 is not connected — AP starts in standalone mode"
+    fi
+    echo "$AP_MODE" >"$AP_MODE_FILE"
 
-    # One radio / one channel: AP hw_mode+channel must match router (STA link).
+    # One radio / one channel:
+    # - if wlan0 is already connected, AP follows wlan0's channel
+    # - if wlan0 is not connected, AP picks a free standalone channel
+    # Never pin channel/band/BSSID into saved NetworkManager client profiles.
     wlan_sync_ap_channel_to_sta
 
     ip link set "$WLAN" up || true
@@ -72,7 +90,6 @@ setup_interface() {
     iw dev "$WLAN" interface add "$AP" type __ap
     ip link set dev "$AP" address "$AP_MAC"
     ip link set "$AP" down
-    iw dev "$AP" set type __ap
     ip link set "$AP" up
 
     if ! ip addr show dev "$AP" | grep -q "${AP_IP%/*}"; then
@@ -87,6 +104,11 @@ start_services() {
         log "ERROR: hostapd failed — check: journalctl -u hostapd -n 20"
         log "  Common fix: sudo ensure-hostapd-concurrent.sh && remove noscan from hostapd conf"
         return 1
+    fi
+    if [[ "$AP_MODE" == "concurrent" ]]; then
+        # MT7921: driver sends DEAUTH to wlan0 STA when AP starts (nl80211_start_ap).
+        # Stop NM retries IMMEDIATELY — each AUTH_REJECT resets the router hold-down.
+        nmcli device disconnect "$WLAN" 2>/dev/null || true
     fi
     sleep 2
 
@@ -105,13 +127,18 @@ start_services() {
         log "Applying NAT / forwarding"
         "${SCRIPT_DIR}/setup-nat.sh" || log "WARN: setup-nat failed"
     fi
+
+    # MT7921: AP start locks wlan0 TX power to ~3 dBm (concurrent mode bug).
+    # Restore regulatory domain + auto power so wlan0 can maintain a stable link.
+    log "Restoring wlan0 TX power after AP start"
+    wlan_fix_radio_power
 }
 
 restore_wlan_client() {
     if [[ -x /usr/local/bin/restore-wlan-client.sh ]]; then
-        timeout 120 /usr/local/bin/restore-wlan-client.sh
+        timeout 50 /usr/local/bin/restore-wlan-client.sh
     else
-        timeout 120 "${SCRIPT_DIR}/restore-wlan-client.sh"
+        timeout 50 "${SCRIPT_DIR}/restore-wlan-client.sh"
     fi
 }
 
@@ -121,12 +148,20 @@ if ! start_services; then
     exit 1
 fi
 
-if ! restore_wlan_client; then
-    log "WARN: wlan0 client restore failed — keepalive will retry every 20s"
+if [[ "$AP_MODE" == "concurrent" ]]; then
+    if ! restore_wlan_client; then
+        log "WARN: wlan0 client restore failed — keepalive will retry every 20s"
+    fi
+else
+    log "Standalone AP mode — not touching wlan0 while AP is up"
 fi
 
-systemctl enable --now gcs-wlan-keepalive.timer 2>/dev/null \
-    || log "WARN: enable gcs-wlan-keepalive.timer manually"
+if [[ "$AP_MODE" == "concurrent" ]]; then
+    systemctl enable --now gcs-wlan-keepalive.timer 2>/dev/null \
+        || log "WARN: enable gcs-wlan-keepalive.timer manually"
+else
+    systemctl disable --now gcs-wlan-keepalive.timer 2>/dev/null || true
+fi
 
 if [[ -x /usr/local/bin/restart-ap-streaming.sh ]]; then
     /usr/local/bin/restart-ap-streaming.sh || log "WARN: AP streaming restart failed"
@@ -135,4 +170,4 @@ elif [[ -x "${SCRIPT_DIR}/restart-ap-streaming.sh" ]]; then
 fi
 
 SSID="$(grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || echo 'AP')"
-log "AP ready: SSID ${SSID} on $AP ($AP_IP), wlan0 $(nmcli -t -f STATE device show "$WLAN" 2>/dev/null | head -1 || echo unknown)"
+log "AP ready: SSID ${SSID} on $AP ($AP_IP), mode=${AP_MODE}, wlan0 $(nmcli -t -f STATE device show "$WLAN" 2>/dev/null | head -1 || echo unknown)"
