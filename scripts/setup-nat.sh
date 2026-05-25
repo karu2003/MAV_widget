@@ -9,6 +9,8 @@ UPLINK_IFS=(wlan0 eth1)
 RECIPIENT_IFS=(uap0 eth0)
 
 AP_GW="${AP_GW:-192.168.54.1}"
+AP_NET="${AP_NET:-192.168.54.0/24}"
+RADIO_IF="${RADIO_IF:-eth0}"
 RULES_FILE="${RULES_FILE:-/etc/iptables/rules.v4}"
 DNSMASQ_SNIPPET="${DNSMASQ_SNIPPET:-/etc/dnsmasq.d/drone-hotspot.conf}"
 
@@ -54,11 +56,14 @@ for uplink in "${UPLINK_IFS[@]}"; do
     done
 done
 
-# Local: AP clients may reach drone radio subnet directly (no NAT).
-if ip link show uap0 &>/dev/null && ip link show eth0 &>/dev/null; then
-    iptables -A FORWARD -i uap0 -o eth0 -j ACCEPT
-    iptables -A FORWARD -i eth0 -o uap0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-    log "FORWARD uap0 <-> eth0 (local MAVLink / drone subnet)"
+# Local: AP clients may reach drone radio subnet. MASQUERADE makes replies work
+# even when ArduPilot/sonar do not have a route back to 192.168.54.0/24.
+if ip link show uap0 &>/dev/null && ip link show "$RADIO_IF" &>/dev/null; then
+    iptables -t nat -A POSTROUTING -s "$AP_NET" -o "$RADIO_IF" -j MASQUERADE
+    iptables -A FORWARD -i uap0 -o "$RADIO_IF" -j ACCEPT
+    iptables -A FORWARD -i "$RADIO_IF" -o uap0 -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+    log "MASQUERADE ${AP_NET} -> ${RADIO_IF} (phone -> drone subnet)"
+    log "FORWARD uap0 <-> ${RADIO_IF} (local MAVLink / drone subnet)"
 fi
 
 if command -v netfilter-persistent >/dev/null; then

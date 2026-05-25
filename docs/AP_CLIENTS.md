@@ -81,7 +81,7 @@ VLC on a phone: same URL (`ffplay -rtsp_transport tcp …` on the GCS may show 4
 | Video from drone | 5600/udp | eth0 (companion → GCS) |
 | Video relay (local) | 5601/udp | 127.0.0.1 (ffmpeg RTP ingest) |
 
-AP clients get internet via NAT (`setup-nat.sh`). Direct access to the drone radio subnet **192.168.53.0/24** is forwarded between `uap0` and `eth0`.
+AP clients get internet via NAT (`setup-nat.sh`). Access from phones (`192.168.54.0/24`) to the drone radio subnet **192.168.53.0/24** is forwarded and masqueraded through `eth0`, so ArduPilot/sonar do not need a return route to the AP subnet.
 
 ## Concurrent AP + wlan0 client
 

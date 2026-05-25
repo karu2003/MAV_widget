@@ -5,6 +5,8 @@ set -euo pipefail
 
 UPLINK_IFS=(wlan0 eth1)
 RECIPIENT_IFS=(uap0 eth0)
+AP_NET="${AP_NET:-192.168.54.0/24}"
+RADIO_IF="${RADIO_IF:-eth0}"
 
 ok=0
 warn=0
@@ -74,6 +76,19 @@ else
                 fi
             done
         done
+
+        if ip link show uap0 &>/dev/null && ip link show "$RADIO_IF" &>/dev/null; then
+            if iptables_cmd -t nat -C POSTROUTING -s "$AP_NET" -o "$RADIO_IF" -j MASQUERADE 2>/dev/null; then
+                pass "MASQUERADE ${AP_NET} -> ${RADIO_IF} (phone reaches drone subnet)"
+            else
+                bad "Missing MASQUERADE ${AP_NET} -> ${RADIO_IF} (phone ping to 192.168.53.x may fail)"
+            fi
+            if iptables_cmd -C FORWARD -i uap0 -o "$RADIO_IF" -j ACCEPT 2>/dev/null; then
+                pass "FORWARD uap0 -> ${RADIO_IF}"
+            else
+                bad "Missing FORWARD uap0 -> ${RADIO_IF}"
+            fi
+        fi
 
         echo "$nat_lines"
         echo "$fwd_lines"

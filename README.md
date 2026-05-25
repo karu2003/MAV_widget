@@ -253,7 +253,7 @@ After `setup_wifi_ap.sh`:
 
 Uses `drone-hotspot.service` (not GNOME Settings → Hotspot).
 
-AP clients get gateway `192.168.54.1` via dnsmasq. Devices on `192.168.53.x` need **static default gateway `192.168.53.1`** on the radio side.
+AP clients get gateway `192.168.54.1` via dnsmasq. `setup-nat.sh` also masquerades phone traffic from `192.168.54.0/24` out `eth0`, so phones can reach `192.168.53.x` devices even if ArduPilot/sonar do not have a route back to the AP subnet.
 
 ---
 
