@@ -1,7 +1,5 @@
 # Installation (GCS / Winmate)
 
-Step-by-step setup for MAV widget, MAVProxy, Wi‑Fi AP, and **concurrent** wlan0 client + AP on one radio.
-
 ---
 
 ## 1. Prerequisites
@@ -10,8 +8,6 @@ Step-by-step setup for MAV widget, MAVProxy, Wi‑Fi AP, and **concurrent** wlan
 - Python 3.10+
 - User session with systemd user services (graphical login)
 - Wi‑Fi profiles saved in NetworkManager (`nmcli connection show`)
-
-Clone or copy the project:
 
 ```bash
 cd ~
@@ -25,13 +21,8 @@ cd ~/MAV_widget
 
 ```bash
 pip install -r requirements.txt
-```
-
-Optional: verify joystick
-
-```bash
-python3 probe_input.py
-python3 widget.py --no-joystick   # overlay only
+python3 probe_input.py            # optional: verify joystick
+python3 widget.py --no-joystick   # optional: overlay only
 ```
 
 ---
@@ -57,28 +48,7 @@ check-network.sh
 
 ## 4. Wi‑Fi AP + concurrent client (wlan0 + uap0)
 
-The adapter (MT7921) supports **STA + AP at the same time** on **one channel**:
-
-```
-phy#0  (#channels <= 1)
-  wlan0  managed  →  router (internet)
-  uap0   AP       →  CaimanHS (phones)
-```
-
-**Same channel rule** — if wlan0 is connected, AP matches the router channel:
-
-| Router (wlan0) | AP (hostapd / uap0) |
-|----------------|---------------------|
-| 2.4 GHz ch 6   | `channel=6`, `hw_mode=g` |
-| 2.4 GHz ch 11  | `channel=11`, `hw_mode=g` |
-| 5 GHz ch 36    | `channel=36`, `hw_mode=a` |
-
-Different channels simultaneously — **not possible** on this hardware.
-
-If wlan0 is not connected when AP starts, AP chooses the least busy 2.4 GHz
-channel (`1/6/11`) in standalone mode. In standalone mode keepalive does not
-touch wlan0 until AP is off. AP startup never writes channel/band/BSSID pins
-into saved NetworkManager Wi-Fi profiles.
+MT7921: single radio — wlan0 (STA) + uap0 (AP) on the **same channel**. AP channel follows wlan0 automatically.
 
 ### 4.1 First-time AP install
 
@@ -86,13 +56,6 @@ into saved NetworkManager Wi-Fi profiles.
 cd ~/MAV_widget
 sudo ./setup_wifi_ap.sh
 ```
-
-This installs:
-
-- `drone-hotspot.service` — creates `uap0`, syncs channel from wlan0, starts hostapd/dnsmasq
-- NAT (`setup-nat.sh`) — internet from `wlan0`/`eth1` to AP clients
-- `gcs-wlan-keepalive.timer` — keeps wlan0 up while AP runs (every 30 s)
-- AP tray icon (`gcs-ap-tray.service`)
 
 **Reboot** after first network/AP install if prompted.
 
@@ -114,31 +77,22 @@ sudo systemctl enable --now gcs-wlan-keepalive.timer
 
 ### 4.4 Optional: prefer one Wi‑Fi profile
 
-Any saved profile works. To try one first:
-
 ```bash
 sudo ./scripts/configure-wlan-client.sh Coco
-# or clear preference:
+# or clear preference (auto):
 sudo ./scripts/configure-wlan-client.sh
-# (empty name → auto)
 ```
 
 Set in `/etc/default/gcs-ap-streaming`: `GCS_WLAN_CONNECTION=ProfileName`
 
 ### 4.5 AP control
 
-AP is **off by default at every boot**:
+AP is **off by default** at every boot. Turn on via tray or `toggle-ap.sh`.
 
-- `drone-hotspot.service` is installed but **disabled** for boot.
-- `gcs-ap-default-off.service` creates `/var/lib/gcs-ap/manual-off` after local filesystems are writable.
-- Turn AP on only from tray or `toggle-ap.sh`.
-
-- **Tray icon** (top panel) — right-click: AP on/off, Reconnect Wi‑Fi client, Settings
+- **Tray icon** — right-click: AP on/off, Reconnect Wi‑Fi client, Settings
 - Terminal: `toggle-ap.sh`
 
 ### 4.6 Verify concurrent mode
-
-Both must be up **at the same time** on the **same channel**:
 
 ```bash
 iw dev wlan0 link          # freq 2462 → channel 11
@@ -147,14 +101,6 @@ iw dev uap0 info           # channel 11 (2462 MHz)
 nmcli device status        # wlan0 connected, uap0 unmanaged
 systemctl is-active hostapd
 check-gcs-link.sh
-```
-
-Example (working):
-
-```text
-wlan0: Coco, freq 2462 (ch 11)
-hostapd: channel=11, hw_mode=g
-uap0: CaimanHS, channel 11
 ```
 
 ### 4.7 Troubleshooting Wi‑Fi + AP
@@ -181,19 +127,11 @@ cd ~/MAV_widget
 systemctl --user enable --now mavproxy-gcs mav-widget
 ```
 
-Boot order after graphical login:
-
-1. `mavproxy-gcs.service` — master `udpin:192.168.53.1:14550`, out `127.0.0.1:14551/14552`
-2. `mav-widget.service` — overlay on `udp:127.0.0.1:14552`
-
-`drone-hotspot.service` is not part of boot autostart; tray/`toggle-ap.sh` starts it on demand.
-
-Logs:
+Ports: MAVProxy master `udpin:192.168.53.1:14550`, widget `udp:127.0.0.1:14552`, QGC `udp:127.0.0.1:14551`.
 
 ```bash
 systemctl --user status mavproxy-gcs mav-widget
-tail -f ~/.local/state/mav-gcs/mav-widget.log
-tail -f ~/.local/state/mav-gcs/mavproxy-gcs.log
+mav-gcs-logs.sh -f
 ```
 
 QGC: UDP **14551**, disable AutoConnect on 14550 — [docs/MAVPROXY_QGC.md](docs/MAVPROXY_QGC.md)
@@ -213,8 +151,6 @@ RTSP: `rtsp://192.168.54.1:8554/stream`
 ---
 
 ## 7. Full install checklist
-
-Run once on a new GCS:
 
 ```bash
 cd ~/MAV_widget
