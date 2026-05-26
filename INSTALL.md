@@ -91,7 +91,7 @@ This installs:
 
 - `drone-hotspot.service` — creates `uap0`, syncs channel from wlan0, starts hostapd/dnsmasq
 - NAT (`setup-nat.sh`) — internet from `wlan0`/`eth1` to AP clients
-- `gcs-wlan-keepalive.timer` — keeps wlan0 up while AP runs (every 20 s)
+- `gcs-wlan-keepalive.timer` — keeps wlan0 up while AP runs (every 30 s)
 - AP tray icon (`gcs-ap-tray.service`)
 
 **Reboot** after first network/AP install if prompted.
@@ -166,7 +166,7 @@ uap0: CaimanHS, channel 11
 | Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
 | Profile `CuCu` (duplicate) | `sudo cleanup-nm-wifi-duplicates.sh` |
 | AP starts at boot unwanted | `sudo systemctl disable drone-hotspot.service && sudo systemctl enable gcs-ap-default-off.service` |
-| wlan0 down, AP still on | Tray → **Reconnect Wi‑Fi client**, or wait for keepalive (~20 s) |
+| wlan0 down, AP still on | Tray → **Reconnect Wi‑Fi client**, or wait for keepalive (~30 s) |
 | Only AP, no internet on wlan0 | Router must be on **same channel** as AP while both run |
 
 More detail: [docs/AP_CLIENTS.md](docs/AP_CLIENTS.md)

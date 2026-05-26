@@ -170,4 +170,4 @@ elif [[ -x "${SCRIPT_DIR}/restart-ap-streaming.sh" ]]; then
 fi
 
 SSID="$(grep -E '^ssid=' "$HOSTAPD_CONF" 2>/dev/null | cut -d= -f2- || echo 'AP')"
-log "AP ready: SSID ${SSID} on $AP ($AP_IP), mode=${AP_MODE}, wlan0 $(nmcli -t -f STATE device show "$WLAN" 2>/dev/null | head -1 || echo unknown)"
+log "AP ready: SSID ${SSID} on $AP ($AP_IP), mode=${AP_MODE}, wlan0 $(nmcli -t -f GENERAL.STATE device show "$WLAN" 2>/dev/null | cut -d: -f2- || echo unknown)"

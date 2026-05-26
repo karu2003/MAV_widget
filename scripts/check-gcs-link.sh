@@ -15,8 +15,8 @@ echo ""
 
 # Wi-Fi client (internet uplink on wlan0)
 if ip link show wlan0 &>/dev/null; then
-    state="$(nmcli -t -f STATE device show wlan0 2>/dev/null | head -1 || echo unknown)"
-    conn="$(nmcli -t -f CONNECTION device show wlan0 2>/dev/null | head -1 || true)"
+    state="$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | awk -F: '$1=="wlan0"{print $2; exit}' || echo unknown)"
+    conn="$(nmcli -t -f DEVICE,CONNECTION device status 2>/dev/null | awk -F: '$1=="wlan0"{print $2; exit}' || true)"
     if [[ "$state" == "connected" && -n "$conn" ]]; then
         ok "wlan0 connected ($conn)"
         ip -br addr show wlan0 | awk '{print "       "$0}'

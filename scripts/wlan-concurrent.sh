@@ -547,7 +547,7 @@ wlan_connect_nm_autoconnect() {
     nmcli -w 60 device connect "$WLAN" 2>/dev/null || true
     if wlan_is_connected; then
         local profile
-        profile="$(nmcli -t -f CONNECTION device show "$WLAN" 2>/dev/null | head -1)"
+        profile="$(nmcli -t -f GENERAL.CONNECTION device show "$WLAN" 2>/dev/null | cut -d: -f2-)"
         [[ -n "$profile" && "$profile" != "--" ]] && wlan_save_sta_state "$profile"
         wlan_log "Connected via autoconnect: ${profile}"
         return 0
@@ -586,7 +586,7 @@ wlan_connect_client() {
     fi
 
     if wlan_is_connected; then
-        profile="$(nmcli -t -f CONNECTION device show "$WLAN" 2>/dev/null | head -1)"
+        profile="$(nmcli -t -f GENERAL.CONNECTION device show "$WLAN" 2>/dev/null | cut -d: -f2-)"
         if [[ -n "$profile" && "$profile" != "--" ]]; then
             wlan_save_sta_state "$profile"
             wlan_log "Already connected: ${profile} (AP ${ap_active:+on}${ap_active:-off})"
