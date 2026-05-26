@@ -144,7 +144,7 @@ iw dev
 
 Do not use the AP SSID (CaimanHS) as client profile.
 
-**AP off at boot:** `gcs-ap-default-off.service` creates `/var/lib/gcs-ap/manual-off` before `drone-hotspot`. Enable AP only from tray / `toggle-ap.sh`.
+**AP off at boot:** `drone-hotspot.service` is disabled for boot, and `gcs-ap-default-off.service` creates `/var/lib/gcs-ap/manual-off` after local filesystems are writable. Enable AP only from tray / `toggle-ap.sh`.
 
 **Duplicate NM profiles** (`CuCu`): created when NetworkManager renames a profile after failed `connection modify`. Run `sudo cleanup-nm-wifi-duplicates.sh`.
 

@@ -42,6 +42,10 @@ install -m 644 "$PROJECT_DIR/systemd/gcs-wlan-keepalive.timer" "$SYSTEMD_DIR/gcs
 systemctl daemon-reload
 systemctl enable gcs-ap-default-off.service
 systemctl start gcs-ap-default-off.service
+# AP must never auto-start on boot. toggle-ap.sh starts drone-hotspot explicitly.
+systemctl disable drone-hotspot.service 2>/dev/null || true
+systemctl stop drone-hotspot.service 2>/dev/null || true
+"$INSTALL_BIN/stop-drone-hotspot.sh" --no-restore 2>/dev/null || true
 
 install -m 755 "$PROJECT_DIR/scripts/reset-wifi-profiles.sh" "$INSTALL_BIN/reset-wifi-profiles.sh"
 install -m 755 "$PROJECT_DIR/scripts/repair-wifi-profile.sh" "$INSTALL_BIN/repair-wifi-profile.sh"

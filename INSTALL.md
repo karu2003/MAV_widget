@@ -127,7 +127,11 @@ Set in `/etc/default/gcs-ap-streaming`: `GCS_WLAN_CONNECTION=ProfileName`
 
 ### 4.5 AP control
 
-AP is **off by default at every boot** (`gcs-ap-default-off.service` sets `manual-off`). Turn on only from tray or `toggle-ap.sh`.
+AP is **off by default at every boot**:
+
+- `drone-hotspot.service` is installed but **disabled** for boot.
+- `gcs-ap-default-off.service` creates `/var/lib/gcs-ap/manual-off` after local filesystems are writable.
+- Turn AP on only from tray or `toggle-ap.sh`.
 
 - **Tray icon** (top panel) — right-click: AP on/off, Reconnect Wi‑Fi client, Settings
 - Terminal: `toggle-ap.sh`
@@ -161,7 +165,7 @@ uap0: CaimanHS, channel 11
 | AP on ch 6, router on ch 11 | Restart AP after wlan0 connected: `sudo systemctl restart drone-hotspot` |
 | Wi‑Fi dead after AP off | `sudo fix-wlan-after-ap.sh` |
 | Profile `CuCu` (duplicate) | `sudo cleanup-nm-wifi-duplicates.sh` |
-| AP starts at boot unwanted | `sudo systemctl enable gcs-ap-default-off.service` |
+| AP starts at boot unwanted | `sudo systemctl disable drone-hotspot.service && sudo systemctl enable gcs-ap-default-off.service` |
 | wlan0 down, AP still on | Tray → **Reconnect Wi‑Fi client**, or wait for keepalive (~20 s) |
 | Only AP, no internet on wlan0 | Router must be on **same channel** as AP while both run |
 
@@ -179,9 +183,10 @@ systemctl --user enable --now mavproxy-gcs mav-widget
 
 Boot order after graphical login:
 
-1. `drone-hotspot.service` (AP, if not manual-off)
-2. `mavproxy-gcs.service` — master `udpin:192.168.53.1:14550`, out `127.0.0.1:14551/14552`
-3. `mav-widget.service` — overlay on `udp:127.0.0.1:14552`
+1. `mavproxy-gcs.service` — master `udpin:192.168.53.1:14550`, out `127.0.0.1:14551/14552`
+2. `mav-widget.service` — overlay on `udp:127.0.0.1:14552`
+
+`drone-hotspot.service` is not part of boot autostart; tray/`toggle-ap.sh` starts it on demand.
 
 Logs:
 

@@ -170,11 +170,12 @@ install -m 755 "$PROJECT_DIR/scripts/cleanup-nm-wifi-duplicates.sh" "$INSTALL_BI
 systemctl disable hostapd dnsmasq 2>/dev/null || true
 
 systemctl daemon-reload
-systemctl enable gcs-ap-default-off.service drone-hotspot.service \
+systemctl enable gcs-ap-default-off.service \
     gcs-video-udp-relay.service gcs-video-rtsp.service gcs-wlan-keepalive.timer
+systemctl disable drone-hotspot.service 2>/dev/null || true
 systemctl start gcs-ap-default-off.service 2>/dev/null || true
 systemctl stop drone-hotspot.service 2>/dev/null || true
-"$INSTALL_BIN/stop-drone-hotspot.sh" 2>/dev/null || true
+"$INSTALL_BIN/stop-drone-hotspot.sh" --no-restore 2>/dev/null || true
 systemctl restart gcs-video-udp-relay.service gcs-video-rtsp.service 2>/dev/null || true
 "$INSTALL_BIN/setup-nat.sh"
 

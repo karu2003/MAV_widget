@@ -1,7 +1,7 @@
 [Unit]
 Description=GCS AP default off at boot (enable only via tray/toggle-ap)
+After=local-fs.target
 Before=drone-hotspot.service
-DefaultDependencies=no
 
 [Service]
 Type=oneshot
