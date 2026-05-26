@@ -202,11 +202,11 @@ wlan_is_connected() {
 
 wlan_save_sta_state() {
     local profile="${1:-${GCS_WLAN_CONNECTION:-}}"
-    local ch bssid ssid band hw
+    local ch bssid ssid freq band hw
     mkdir -p "$GCS_AP_STATE"
     ch="$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
     bssid="$(wlan_link_bssid)"
-    ssid="$(iw dev "$WLAN" link 2>/dev/null | awk -F'ssid ' '/SSID:/ {print $2; exit}')"
+    ssid="$(iw dev "$WLAN" link 2>/dev/null | awk -F': ' '/SSID:/ {print $2; exit}')"
     freq="$(iw dev "$WLAN" link 2>/dev/null | awk '/freq:/ {print $2; exit}')"
     band="$(wlan_band_for_channel "${ch:-6}")"
     hw="$(wlan_hw_mode_from_freq "$freq")"

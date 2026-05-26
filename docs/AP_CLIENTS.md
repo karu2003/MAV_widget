@@ -105,11 +105,11 @@ Different channels at the same time — **impossible** on this adapter.
 
 AP channel policy:
 
-- If **wlan0 is already connected**, `start-drone-hotspot.sh` starts AP in `concurrent` mode: it reads `freq` + `channel` from `iw dev wlan0 link`, configures hostapd to the same channel, and keepalive may reconnect wlan0 only on that channel.
+- If **wlan0 is already connected**, `start-drone-hotspot.sh` starts AP in `concurrent` mode: it saves the current profile/BSSID/channel before AP start, configures hostapd to the same channel, and keepalive may reconnect wlan0 only to that saved BSSID.
 - If **wlan0 is not connected**, AP starts in `standalone` mode on the least busy 2.4 GHz non-overlapping channel (`1/6/11`); keepalive does **not** touch wlan0 until AP is off.
 - AP channel selection never writes channel/band/BSSID pins into saved NetworkManager Wi-Fi profiles.
 
-`gcs-wlan-keepalive.timer` reconnects wlan0 every 20s only in `concurrent` mode.
+`gcs-wlan-keepalive.timer` reconnects wlan0 every 20s only in `concurrent` mode, without active scans while AP is up.
 
 No manual setup required: scripts try all NetworkManager Wi‑Fi profiles (autoconnect first). Optional preference:
 
