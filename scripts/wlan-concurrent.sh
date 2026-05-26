@@ -197,7 +197,27 @@ wlan_link_bssid() {
 }
 
 wlan_is_connected() {
-    nmcli -t -f STATE device show "$WLAN" 2>/dev/null | head -1 | grep -qx connected
+    # Use 'device status' — 'device show' with -f STATE returns empty in NM 1.36.
+    nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep -q "^${WLAN}:connected"
+}
+
+# True if wlan0 NM state is anything other than disconnected/unavailable/unmanaged.
+# Use in keepalive to avoid interrupting an in-progress connection attempt.
+wlan_sta_is_busy() {
+    local state
+    state=$(nmcli -t -f DEVICE,STATE device status 2>/dev/null | grep "^${WLAN}:" | cut -d: -f2)
+    [[ -n "$state" && "$state" != "disconnected" && "$state" != "unavailable" && "$state" != "unmanaged" ]]
+}
+
+# Disable wpa_supplicant background scanning for the current network.
+# On a single-radio concurrent STA+AP, bgscan goes off-channel and disrupts
+# both the STA association and AP clients.
+wlan_disable_bgscan() {
+    local netid
+    netid=$(wpa_cli -i "$WLAN" list_networks 2>/dev/null | awk 'NR>1 {print $1; exit}')
+    [[ -z "$netid" ]] && return 0
+    wpa_cli -i "$WLAN" set_network "$netid" bgscan '""' 2>/dev/null || true
+    wlan_log "Disabled bgscan (network ${netid}) on ${WLAN}"
 }
 
 wlan_save_sta_state() {
@@ -512,6 +532,8 @@ wlan_try_connect_profile() {
     if err="$(nmcli -w "${connect_timeout}" connection up "$profile" ifname "$WLAN" "${up_extra[@]}" 2>&1)"; then
         wlan_save_sta_state "$profile"
         wlan_log "Connected: ${profile} ch=$(iw dev "$WLAN" info 2>/dev/null | awk '/channel/ {print $2; exit}')"
+        # Disable bgscan to prevent off-channel scans from disrupting concurrent STA+AP.
+        [[ "$ap_active" == true ]] && wlan_disable_bgscan
         return 0
     fi
     wlan_log "  failed: ${err}"

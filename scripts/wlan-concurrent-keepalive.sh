@@ -21,13 +21,12 @@ if [[ "$(wlan_ap_mode)" != "concurrent" ]]; then
 fi
 
 if wlan_is_connected; then
-    # Even when connected, fix TX power if MT7921 concurrent-mode bug left it
-    # at minimum (~3 dBm).  A weak TX causes frequent drops without NM noticing.
-    _tp="$(iw dev "${WLAN:-wlan0}" info 2>/dev/null | awk '/txpower/ {print int($2); exit}')"
-    if [[ -n "$_tp" && "$_tp" -le 5 ]]; then
-        wlan_log "Keepalive: connected but txpower=${_tp}dBm — restoring"
-        iw dev "${WLAN:-wlan0}" set txpower auto 2>/dev/null || true
-    fi
+    exit 0
+fi
+
+# wlan0 is connecting but not yet associated — don't interrupt in-progress attempt.
+if wlan_sta_is_busy; then
+    wlan_log "Keepalive: wlan0 is connecting — waiting for next tick"
     exit 0
 fi
 

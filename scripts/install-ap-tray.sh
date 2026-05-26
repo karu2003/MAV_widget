@@ -59,7 +59,7 @@ rm -f /usr/share/applications/gcs-ap-settings.desktop
 rm -f /usr/local/bin/update-ap-desktop-icon.sh
 rm -f /usr/local/bin/remove-ap-desktop.sh
 
-if [[ ! -f "$SUDOERS_FILE" ]] || ! grep -q 'toggle-ap.sh' "$SUDOERS_FILE" 2>/dev/null; then
+if [[ ! -f "$SUDOERS_FILE" ]] || ! grep -q 'restore-wlan-client.sh' "$SUDOERS_FILE" 2>/dev/null; then
     cat >"$SUDOERS_FILE" <<'EOF'
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/toggle-ap.sh
 ubuntu ALL=(root) NOPASSWD: /usr/local/bin/stop-ap-user.sh
