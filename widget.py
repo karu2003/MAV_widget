@@ -28,7 +28,7 @@ ERR = "#e74c3c"
 MUTED = "#888888"
 
 WIDGET_WIDTH = 210
-WIDGET_HEIGHT = 280
+WIDGET_HEIGHT = 305
 WIDGET_MARGIN = 20
 
 
@@ -56,14 +56,15 @@ class TelemetryWidget:
         frame.pack(fill=tk.BOTH, expand=True)
 
         self.status_label = self._row(frame, "LINK", "---", 0)
-        self.mode_label = self._row(frame, "MODE", "---", 1)
-        self.battery_label = self._row(frame, "BATT", "---", 2)
-        self.gps_label = self._row(frame, "GPS", "---", 3)
-        self.alt_label = self._row(frame, "ALT", "---", 4)
-        self.speed_label = self._row(frame, "SPD", "---", 5)
-        self.att_label = self._row(frame, "ATT", "---", 6)
-        self.joy_label = self._row(frame, "JOY", "---", 7)
-        self.btn_label = self._row(frame, "BTN", "---", 8)
+        self.state_label = self._row(frame, "STAT", "---", 1)
+        self.mode_label = self._row(frame, "MODE", "---", 2)
+        self.battery_label = self._row(frame, "BATT", "---", 3)
+        self.gps_label = self._row(frame, "GPS", "---", 4)
+        self.alt_label = self._row(frame, "ALT", "---", 5)
+        self.speed_label = self._row(frame, "SPD", "---", 6)
+        self.att_label = self._row(frame, "ATT", "---", 7)
+        self.joy_label = self._row(frame, "JOY", "---", 8)
+        self.btn_label = self._row(frame, "BTN", "---", 9)
 
         self.root.after(self.REFRESH_MS, self._refresh)
 
@@ -89,6 +90,13 @@ class TelemetryWidget:
             link_color = ERR
 
         self.status_label.configure(text=link_text, fg=link_color)
+
+        state_name = drone.system_status_name
+        state_colors = {
+            "STANDBY": OK, "ACTIVE": WARN, "CRITICAL": ERR, "EMERGENCY": ERR,
+        }
+        state_color = state_colors.get(state_name, FG)
+        self.state_label.configure(text=state_name, fg=state_color)
 
         mode_text = drone.mode
         if drone.armed:

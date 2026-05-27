@@ -14,6 +14,7 @@ class DroneState:
     mode: str = "---"
     armed: bool = False
     system_status: int = 0
+    system_status_name: str = "---"
 
     roll: float = 0.0
     pitch: float = 0.0

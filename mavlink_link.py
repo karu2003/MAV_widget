@@ -57,6 +57,19 @@ FLIGHT_MODES = {
     25: "SystemID",
     26: "Heli_Autorotate",
     27: "Auto RTL",
+    28: "Turtle",
+}
+
+MAV_STATE_NAMES = {
+    0: "UNINIT",
+    1: "BOOT",
+    2: "CALIBRATING",
+    3: "STANDBY",
+    4: "ACTIVE",
+    5: "CRITICAL",
+    6: "EMERGENCY",
+    7: "POWEROFF",
+    8: "FLIGHT_TERM",
 }
 
 
@@ -208,12 +221,14 @@ class MavlinkLink:
             custom_mode = msg.custom_mode
             armed = bool(base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
             mode = FLIGHT_MODES.get(custom_mode, f"Mode({custom_mode})")
+            sys_status_name = MAV_STATE_NAMES.get(msg.system_status, f"MAV_STATE({msg.system_status})")
             self.state.update_drone(
                 connected=True,
                 last_heartbeat=time.time(),
                 mode=mode,
                 armed=armed,
                 system_status=msg.system_status,
+                system_status_name=sys_status_name,
             )
         elif msg_type == "ATTITUDE":
             self.state.update_drone(
