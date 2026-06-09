@@ -31,35 +31,6 @@ from drone_state import SharedState
 
 log = logging.getLogger(__name__)
 
-FLIGHT_MODES = {
-    0: "Stabilize",
-    1: "Acro",
-    2: "AltHold",
-    3: "Auto",
-    4: "Guided",
-    5: "Loiter",
-    6: "RTL",
-    7: "Circle",
-    9: "Land",
-    11: "Drift",
-    13: "Sport",
-    14: "Flip",
-    15: "AutoTune",
-    16: "PosHold",
-    17: "Brake",
-    18: "Throw",
-    19: "Avoid_ADSB",
-    20: "Guided_NoGPS",
-    21: "Smart_RTL",
-    22: "FlowHold",
-    23: "Follow",
-    24: "ZigZag",
-    25: "SystemID",
-    26: "Heli_Autorotate",
-    27: "Auto RTL",
-    28: "Turtle",
-}
-
 MAV_STATE_NAMES = {
     0: "UNINIT",
     1: "BOOT",
@@ -71,6 +42,14 @@ MAV_STATE_NAMES = {
     7: "POWEROFF",
     8: "FLIGHT_TERM",
 }
+
+
+def flight_mode_name(msg) -> str:
+    """Decode custom_mode using vehicle type from HEARTBEAT (copter/plane/rover/…)."""
+    name = mavutil.mode_string_v10(msg)
+    if name.startswith("Mode("):
+        return name
+    return name.replace("_", " ").title()
 
 
 def button_to_pwm(pressed: bool) -> int:
@@ -218,9 +197,8 @@ class MavlinkLink:
                 self._target_system = src_sys
                 self._target_component = src_comp or mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1
             base_mode = msg.base_mode
-            custom_mode = msg.custom_mode
             armed = bool(base_mode & mavutil.mavlink.MAV_MODE_FLAG_SAFETY_ARMED)
-            mode = FLIGHT_MODES.get(custom_mode, f"Mode({custom_mode})")
+            mode = flight_mode_name(msg)
             sys_status_name = MAV_STATE_NAMES.get(msg.system_status, f"MAV_STATE({msg.system_status})")
             self.state.update_drone(
                 connected=True,
