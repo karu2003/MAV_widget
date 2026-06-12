@@ -31,11 +31,18 @@ python3 widget.py --no-joystick   # optional: overlay only
 
 Radio port **eth0** must be `192.168.53.1/24`. Interface names are fixed via systemd `.link` files.
 
+The radio adapter is a **USB-ETH adapter** — MAC address is detected automatically at install time.
+No manual MAC configuration needed; the script works on any machine.
+
 ```bash
 sudo ./scripts/setup_network.sh
 sudo reboot
 check-network.sh
 ```
+
+`setup_network.sh` detects the radio USB-ETH adapter automatically (excludes the known USB-debug adapter).
+If multiple ethernet adapters are found, the script prompts you to choose.
+To force a specific interface: `RADIO_ETH_IFACE=enx001122334455 sudo ./scripts/setup_network.sh`
 
 | Interface | Role |
 |-----------|------|

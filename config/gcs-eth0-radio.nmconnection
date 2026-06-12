@@ -1,3 +1,5 @@
+# THIS FILE IS A TEMPLATE — scripts/setup_network.sh generates the installed version
+# with the actual adapter MAC detected at install time.
 [connection]
 id=GCS-Radio
 uuid=2f3b5aeb-bc73-3a2c-8cd8-8a79935a0f8e
@@ -7,7 +9,6 @@ autoconnect=true
 autoconnect-priority=100
 
 [ethernet]
-mac-address=00:55:7B:B5:7D:F7
 
 [ipv4]
 method=manual
