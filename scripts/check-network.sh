@@ -35,10 +35,10 @@ if ip link show eth0 &>/dev/null; then
         if [[ "${m,,}" == "${BUILTIN_MAC,,}" ]]; then
             pass "eth0 MAC $m (radio adapter)"
         else
-            warn "eth0 MAC $m (ожидался $BUILTIN_MAC из $RADIO_LINK_FILE) — переустановите: sudo setup_network.sh"
+            warn "eth0 MAC $m (expected $BUILTIN_MAC from $RADIO_LINK_FILE) — reinstall: sudo setup_network.sh"
         fi
     else
-        warn "eth0 MAC $m (ожидаемый MAC неизвестен — файл $RADIO_LINK_FILE не найден)"
+        warn "eth0 MAC $m (expected MAC unknown — file $RADIO_LINK_FILE not found)"
     fi
     addr="$(ip -br addr show eth0 | awk '{print $3}')"
     if [[ "$addr" == "$RADIO_IP" ]]; then

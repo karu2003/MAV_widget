@@ -55,17 +55,17 @@ detect_radio_iface() {
         1)
             echo "${candidates[0]}" ; return 0 ;;
         *)
-            log "Несколько ETH-адаптеров найдено (кроме debug-адаптера):"
+            log "Multiple ETH adapters found (excluding debug adapter):"
             for i in "${!candidates[@]}"; do
                 local m
                 m=$(cat "/sys/class/net/${candidates[$i]}/address" 2>/dev/null || true)
                 log "  $((i+1)). ${candidates[$i]}  MAC=$m"
             done
             if [[ -t 0 ]]; then
-                read -r -p "[setup-network] Выберите номер радио-адаптера [1]: " choice
+                read -r -p "[setup-network] Select radio adapter number [1]: " choice
                 choice=${choice:-1}
             else
-                log "Не интерактивный режим — выбирается первый адаптер."
+                log "Non-interactive mode — selecting first adapter."
                 choice=1
             fi
             echo "${candidates[$((choice-1))]}" ; return 0 ;;
@@ -75,23 +75,23 @@ detect_radio_iface() {
 # Use explicit env override or auto-detect
 if [[ -n "${RADIO_ETH_IFACE:-}" ]]; then
     RADIO_IFACE="$RADIO_ETH_IFACE"
-    log "Используется адаптер из переменной окружения: $RADIO_IFACE"
+    log "Using adapter from environment variable: $RADIO_IFACE"
 else
     RADIO_IFACE=$(detect_radio_iface || true)
 fi
 
 if [[ -z "$RADIO_IFACE" ]]; then
-    log "ОШИБКА: радио ETH-адаптер не найден. Подключите USB-адаптер и повторите." >&2
+    log "ERROR: radio ETH adapter not found. Plug in the USB adapter and retry." >&2
     exit 1
 fi
 
 RADIO_MAC=$(cat "/sys/class/net/$RADIO_IFACE/address" 2>/dev/null || true)
 if [[ -z "$RADIO_MAC" ]]; then
-    log "ОШИБКА: не удалось прочитать MAC интерфейса $RADIO_IFACE" >&2
+    log "ERROR: could not read MAC of interface $RADIO_IFACE" >&2
     exit 1
 fi
 
-log "Радио-адаптер: $RADIO_IFACE  MAC=$RADIO_MAC"
+log "Radio adapter: $RADIO_IFACE  MAC=$RADIO_MAC"
 
 # ---------------------------------------------------------------------------
 # Generate .link file with the detected MAC (overwrites repo template)
@@ -123,7 +123,7 @@ install -m 644 "${CONFIG}/99-disable-cloud-init-network.cfg" \
     /etc/cloud/cloud.cfg.d/99-disable-cloud-init-network.cfg
 
 # Generate GCS-Radio NM profile with the detected MAC
-log "Генерация NetworkManager профиля GCS-Radio (MAC=$RADIO_MAC)..."
+log "Generating NetworkManager profile GCS-Radio (MAC=$RADIO_MAC)..."
 cat > /etc/NetworkManager/system-connections/GCS-Radio.nmconnection << EOF
 [connection]
 id=GCS-Radio
