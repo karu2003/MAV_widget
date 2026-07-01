@@ -154,6 +154,11 @@ install -m 644 "$PROJECT_DIR/config/dnsmasq-drone-hotspot.conf" /etc/dnsmasq.d/d
 mkdir -p /etc/NetworkManager/conf.d
 install -m 644 "$PROJECT_DIR/config/gcs-concurrent-wifi.conf" \
     /etc/NetworkManager/conf.d/gcs-concurrent-wifi.conf
+# Apply unmanaged-devices=uap0 now so NetworkManager stops flushing the AP IP
+# (192.168.54.1). Without this, NM clears the address ~2s after it is assigned
+# and dnsmasq fails with "unknown interface uap0" — AP clients get no DHCP.
+nmcli general reload 2>/dev/null || systemctl reload NetworkManager 2>/dev/null || true
+nmcli device set uap0 managed no 2>/dev/null || true
 
 MAV_WIDGET_DIR="$PROJECT_DIR" "$PROJECT_DIR/scripts/setup_network.sh"
 
@@ -207,7 +212,7 @@ ip -br addr show wlan0 uap0 2>/dev/null || true
 echo ""
 echo "Done."
 echo "  AP SSID: see /etc/hostapd/drone-hotspot.conf  IP: 192.168.54.1"
-echo "  MAVLink AP: udpbcast :14550  |  RTSP: rtsp://192.168.54.1:8554/stream"
+echo "  MAVLink AP: unicast :14550 (mav-ap-fanout)  |  RTSP: rtsp://192.168.54.1:8554/stream"
 echo "  check-ap-stream.sh"
 echo "  Client WiFi: wlan0 (NetworkManager)"
 echo ""

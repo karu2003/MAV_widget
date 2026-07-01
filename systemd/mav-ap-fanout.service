@@ -1,0 +1,19 @@
+[Unit]
+Description=MAVLink unicast fan-out to Wi-Fi AP clients (phones)
+After=graphical-session.target mavproxy-gcs.service
+Wants=mavproxy-gcs.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+WorkingDirectory=__PROJECT_DIR__
+EnvironmentFile=-/etc/default/gcs-ap-streaming
+ExecStart=/usr/bin/python3 __PROJECT_DIR__/scripts/mav-ap-fanout.py
+StandardOutput=append:__LOG_DIR__/mav-ap-fanout.log
+StandardError=append:__LOG_DIR__/mav-ap-fanout.log
+Restart=always
+RestartSec=3
+TimeoutStartSec=30
+
+[Install]
+WantedBy=graphical-session.target

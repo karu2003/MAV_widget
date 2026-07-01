@@ -9,6 +9,8 @@ Environment=VIDEO_IFACE=eth0
 Environment=VIDEO_UDP_PORT=5600
 Environment=VIDEO_FWD_HOST=127.0.0.1
 Environment=VIDEO_FWD_PORT=5601
+# Override VIDEO_IFACE (and ports) per hardware; on Winmate VIDEO_IFACE=usb0.
+EnvironmentFile=-/etc/default/gcs-ap-streaming
 ExecStart=/usr/local/bin/video-udp-relay.py
 Restart=on-failure
 RestartSec=2

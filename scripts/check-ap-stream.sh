@@ -48,7 +48,7 @@ else
 fi
 
 if systemctl is-active --quiet gcs-video-udp-relay.service 2>/dev/null || pgrep -f '[v]ideo-udp-relay.py' >/dev/null; then
-    ok "UDP video relay (eth0:5600 -> 127.0.0.1:5601)"
+    ok "UDP video relay (${VIDEO_IFACE:-eth0}:5600 -> 127.0.0.1:5601)"
 else
     fail "video-udp-relay not running (QGC uses :5600 on GCS)"
 fi
@@ -63,6 +63,7 @@ fi
 
 if pgrep -f '[m]ediamtx /run/mediamtx-gcs' >/dev/null; then
     ok "RTSP server (MediaMTX publisher)"
+fi
 
 if ss -ulnp 2>/dev/null | grep -q ":${MAV_AP_BCAST_PORT}"; then
     ok "UDP :${MAV_AP_BCAST_PORT} in use (expected)"

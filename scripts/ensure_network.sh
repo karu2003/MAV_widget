@@ -5,11 +5,45 @@
 
 set -euo pipefail
 
+CONF="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
+if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+fi
+
 RADIO_LINK_FILE="/etc/systemd/network/10-gcs-builtin.link"
 DEBUG_MAC="00:60:6e:b9:ce:28"
-RADIO_IP="192.168.53.1/24"
+RADIO_IF="${RADIO_IF:-eth0}"
+RADIO_IP="${RADIO_IP:-192.168.53.1/24}"
+RADIO_BUILTIN="${RADIO_BUILTIN:-0}"
+RADIO_PROFILE="${RADIO_PROFILE:-Microhard-Host}"
 
 log() { echo "[ensure-network] $*"; }
+
+# Built-in radio (e.g. Winmate usb0): ensure IP on RADIO_IF, never rename eth0.
+if [[ "$RADIO_BUILTIN" == "1" ]]; then
+    if ! ip link show "$RADIO_IF" &>/dev/null; then
+        log "ERROR: radio interface $RADIO_IF not present"
+        exit 1
+    fi
+    if ip -br addr show "$RADIO_IF" 2>/dev/null | grep -q "${RADIO_IP%/*}"; then
+        log "Radio OK: $RADIO_IF has $RADIO_IP"
+    else
+        log "Bringing up $RADIO_IF with $RADIO_IP"
+        if nmcli -t -f NAME connection show 2>/dev/null | grep -qxF "$RADIO_PROFILE"; then
+            nmcli connection up "$RADIO_PROFILE" ifname "$RADIO_IF" 2>/dev/null \
+                || nmcli connection up "$RADIO_PROFILE" 2>/dev/null || true
+        fi
+        if ! ip -br addr show "$RADIO_IF" 2>/dev/null | grep -q "${RADIO_IP%/*}"; then
+            log "Fallback: ip addr add $RADIO_IP dev $RADIO_IF"
+            ip addr add "$RADIO_IP" dev "$RADIO_IF" 2>/dev/null || true
+            ip link set "$RADIO_IF" up 2>/dev/null || true
+        fi
+    fi
+    # Radio link must never provide the default route.
+    ip route del default dev "$RADIO_IF" 2>/dev/null || true
+    exit 0
+fi
 
 # Lowercase MAC of an interface (empty string if interface absent)
 mac_of() {

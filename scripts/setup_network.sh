@@ -9,6 +9,16 @@ if [[ "${EUID}" -ne 0 ]]; then
     exit 1
 fi
 
+CONF="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
+if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+fi
+RADIO_IF="${RADIO_IF:-eth0}"
+RADIO_IP="${RADIO_IP:-192.168.53.1/24}"
+RADIO_BUILTIN="${RADIO_BUILTIN:-0}"
+RADIO_PROFILE="${RADIO_PROFILE:-Microhard-Host}"
+
 if [[ -n "${MAV_WIDGET_DIR:-}" ]]; then
     PROJECT_DIR="${MAV_WIDGET_DIR}"
 else
@@ -24,6 +34,69 @@ fi
 CONFIG="${PROJECT_DIR}/config"
 
 log() { echo "[setup-network] $*"; }
+
+# ---------------------------------------------------------------------------
+# Built-in radio path (e.g. Winmate: RADIO_IF=usb0, eth0 is the SoC WAN port).
+# Do NOT rename adapters or install .link rules — just pin a static IP on the
+# built-in radio interface and leave eth0/eth1 alone.
+# ---------------------------------------------------------------------------
+if [[ "$RADIO_BUILTIN" == "1" ]]; then
+    if ! ip link show "$RADIO_IF" &>/dev/null; then
+        log "ERROR: radio interface $RADIO_IF not present (built-in radio mode)"
+        exit 1
+    fi
+    log "Built-in radio mode: $RADIO_IF -> $RADIO_IP (eth0 untouched)"
+
+    for name in "Microhard-Radio-dhcp" "Microhard-Radio" "Wired connection 3"; do
+        nmcli connection delete "$name" 2>/dev/null || true
+    done
+
+    # Bind the profile by interface-name ONLY. RNDIS/CDC gadgets (usb0) get a
+    # randomised MAC on some boots, so binding by MAC makes NM fail to activate.
+    cat > "/etc/NetworkManager/system-connections/${RADIO_PROFILE}.nmconnection" <<EOF
+[connection]
+id=${RADIO_PROFILE}
+uuid=$(uuidgen)
+type=ethernet
+interface-name=${RADIO_IF}
+autoconnect=true
+autoconnect-priority=100
+
+[ipv4]
+method=manual
+address1=${RADIO_IP}
+never-default=true
+
+[ipv6]
+method=disabled
+EOF
+    chmod 600 "/etc/NetworkManager/system-connections/${RADIO_PROFILE}.nmconnection"
+
+    # Same-subnet multi-homing: eth1 (USB debug) may sit on 192.168.53.0/24 too.
+    # arp_ignore/announce keep only RADIO_IF answering ARP for the radio IP so the
+    # drone's telemetry actually reaches udpin:192.168.53.1:14550. rp_filter loose
+    # so asymmetric replies are not dropped.
+    cat > /etc/sysctl.d/99-gcs-radio.conf <<EOF
+# GCS radio link (${RADIO_IF}) — same-subnet multi-homing with USB debug port.
+net.ipv4.conf.all.arp_ignore=1
+net.ipv4.conf.all.arp_announce=2
+net.ipv4.conf.all.rp_filter=0
+EOF
+    sysctl -p /etc/sysctl.d/99-gcs-radio.conf >/dev/null 2>&1 || true
+
+    nmcli connection reload
+    nmcli connection up "$RADIO_PROFILE" ifname "$RADIO_IF" 2>/dev/null \
+        || nmcli connection up "$RADIO_PROFILE" 2>/dev/null || true
+    # Fallback if NM could not activate (device transient): assign directly.
+    if ! ip -br addr show "$RADIO_IF" 2>/dev/null | grep -q "${RADIO_IP%/*}"; then
+        ip addr add "$RADIO_IP" dev "$RADIO_IF" 2>/dev/null || true
+        ip link set "$RADIO_IF" up 2>/dev/null || true
+    fi
+    ip route del default dev "$RADIO_IF" 2>/dev/null || true
+    ip -br addr show "$RADIO_IF"
+    log "Done (built-in radio). eth0 remains WAN; run check-network.sh to verify."
+    exit 0
+fi
 
 # ---------------------------------------------------------------------------
 # Auto-detect the radio USB-ETH adapter.

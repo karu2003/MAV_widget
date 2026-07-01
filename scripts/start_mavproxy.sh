@@ -10,9 +10,9 @@ if [[ -f "$CONF" ]]; then
 fi
 
 AP_IP="${AP_IP:-192.168.54.1}"
-AP_BCAST="${AP_BCAST:-192.168.54.255}"
-MAV_AP_BCAST_PORT="${MAV_AP_BCAST_PORT:-14550}"
 MAV_AP_IN_PORT="${MAV_AP_IN_PORT:-14550}"
+# Internal loopback port that feeds the unicast fan-out relay (mav-ap-fanout.py).
+MAV_AP_FANOUT_PORT="${MAV_AP_FANOUT_PORT:-14545}"
 
 MAVPROXY="${HOME}/.local/bin/mavproxy.py"
 if [[ ! -x "$MAVPROXY" ]]; then
@@ -32,24 +32,31 @@ if ! systemctl is-active --quiet hostapd 2>/dev/null; then
     echo "[mavproxy] hostapd not active (continuing — eth0 link may still work)" >&2
 fi
 
+# Loose reverse-path filter on the radio link so drone packets are accepted
+# even when another interface shares the 192.168.53.0/24 subnet.
+RADIO_IF="${RADIO_IF:-eth0}"
 sysctl -w net.ipv4.conf.all.rp_filter=0 >/dev/null 2>&1 || true
+sysctl -w "net.ipv4.conf.${RADIO_IF}.rp_filter=0" >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.eth0.rp_filter=0 >/dev/null 2>&1 || true
 sysctl -w net.ipv4.conf.uap0.rp_filter=0 >/dev/null 2>&1 || true
 
+# Local consumers (loopback) + a feed for the AP unicast fan-out relay.
+#   14550 -> local QGroundControl (auto-connect UDP listens on 0.0.0.0:14550)
+#   14551 -> spare local link
+#   14552 -> MAV_Widget
+#   14545 -> mav-ap-fanout.py, which unicasts to each phone on the AP
+#            (udpbcast is unreliable: pymavlink latches onto the first
+#             responder and Wi-Fi broadcast is often dropped by Android)
+# AP client uplink (phone -> drone) is handled by the fan-out relay, which
+# owns ${AP_IP}:${MAV_AP_IN_PORT} and forwards phone packets back on 14545.
 MAV_OUTS=(
+    --out="udp:127.0.0.1:14550"
     --out=127.0.0.1:14551
     --out=127.0.0.1:14552
-    --out="udpbcast:${AP_BCAST}:${MAV_AP_BCAST_PORT}"
+    --out="udp:127.0.0.1:${MAV_AP_FANOUT_PORT}"
 )
 
-# AP clients send mavlink to GCS on uap0 (skip bind if interface missing yet)
-if ip link show uap0 &>/dev/null 2>&1; then
-    MAV_OUTS+=(--out="udpin:${AP_IP}:${MAV_AP_IN_PORT}")
-else
-    echo "[mavproxy] uap0 down — AP uplink added when AP starts (restart mavproxy-gcs)" >&2
-fi
-
-echo "[mavproxy] Starting (foreground, force-connected, AP bcast ${AP_BCAST}:${MAV_AP_BCAST_PORT})..."
+echo "[mavproxy] Starting (foreground, force-connected, AP unicast fan-out :${MAV_AP_FANOUT_PORT})..."
 exec python3 "$MAVPROXY" \
     --master=udpin:192.168.53.1:14550 \
     "${MAV_OUTS[@]}" \

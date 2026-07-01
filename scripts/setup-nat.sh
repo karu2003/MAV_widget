@@ -1,16 +1,25 @@
 #!/bin/bash
-# NAT: internet via wlan0 + eth1 → clients on uap0 (AP) and eth0 (192.168.53.0/24).
+# NAT: internet via INTERNET_IFS → clients on uap0 (AP) and the radio subnet.
+# Interface roles are read from /etc/default/gcs-ap-streaming (RADIO_IF,
+# INTERNET_IFS). Defaults keep the original board behaviour (radio=eth0,
+# internet via wlan0/eth1); Winmate sets RADIO_IF=usb0, INTERNET_IFS="eth0 wlan0".
 
 set -euo pipefail
 
-# Internet sources (uplinks)
-UPLINK_IFS=(wlan0 eth1)
-# Recipients of internet (LAN interfaces)
-RECIPIENT_IFS=(uap0 eth0)
+CONF="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
+if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+fi
+
+RADIO_IF="${RADIO_IF:-eth0}"
+# Internet sources (uplinks) — from INTERNET_IFS, else legacy default.
+read -r -a UPLINK_IFS <<< "${INTERNET_IFS:-wlan0 eth1}"
+# Recipients of internet: AP clients + the radio subnet (drone/companion).
+RECIPIENT_IFS=(uap0 "$RADIO_IF")
 
 AP_GW="${AP_GW:-192.168.54.1}"
 AP_NET="${AP_NET:-192.168.54.0/24}"
-RADIO_IF="${RADIO_IF:-eth0}"
 RULES_FILE="${RULES_FILE:-/etc/iptables/rules.v4}"
 DNSMASQ_SNIPPET="${DNSMASQ_SNIPPET:-/etc/dnsmasq.d/drone-hotspot.conf}"
 

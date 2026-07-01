@@ -1,12 +1,19 @@
 #!/bin/bash
-# Verify NAT: wlan0 + eth1 → internet; uap0 (AP) + eth0 (192.168.53.x) → recipients.
+# Verify NAT: INTERNET_IFS → internet; uap0 (AP) + radio subnet → recipients.
+# Roles read from /etc/default/gcs-ap-streaming (RADIO_IF, INTERNET_IFS).
 
 set -euo pipefail
 
-UPLINK_IFS=(wlan0 eth1)
-RECIPIENT_IFS=(uap0 eth0)
-AP_NET="${AP_NET:-192.168.54.0/24}"
+CONF="${GCS_STREAMING_CONF:-/etc/default/gcs-ap-streaming}"
+if [[ -f "$CONF" ]]; then
+    # shellcheck disable=SC1090
+    source "$CONF"
+fi
+
 RADIO_IF="${RADIO_IF:-eth0}"
+read -r -a UPLINK_IFS <<< "${INTERNET_IFS:-wlan0 eth1}"
+RECIPIENT_IFS=(uap0 "$RADIO_IF")
+AP_NET="${AP_NET:-192.168.54.0/24}"
 
 ok=0
 warn=0
@@ -27,7 +34,7 @@ iptables_cmd() {
 
 echo "=== NAT / forwarding check ==="
 echo "Internet sources (uplinks):  ${UPLINK_IFS[*]}"
-echo "Internet recipients (LANs):  ${RECIPIENT_IFS[*]}  (AP + 192.168.53.0/24 via eth0)"
+echo "Internet recipients (LANs):  ${RECIPIENT_IFS[*]}  (AP + 192.168.53.0/24 via ${RADIO_IF})"
 echo ""
 for ifc in "${UPLINK_IFS[@]}" "${RECIPIENT_IFS[@]}"; do
     echo "  $ifc  $(ip -br addr show "$ifc" 2>/dev/null || echo 'missing')"

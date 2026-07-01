@@ -1,5 +1,11 @@
 # Installation (GCS / Winmate)
 
+> **Winmate GCS with a built‑in radio on `usb0`?** Use the complete from‑scratch
+> guide — one command installs everything (AP, MAVLink unicast fan‑out, video,
+> autostart): **[docs/INSTALL_WINMATE.md](docs/INSTALL_WINMATE.md)**.
+> The guide below covers the dev‑board layout (external USB‑Ethernet radio
+> renamed to `eth0`).
+
 ---
 
 ## 1. Prerequisites

@@ -95,16 +95,23 @@ pkill -f mavproxy.py
 systemctl --user restart mav-widget
 ```
 
-## Reference command (matches autostart-gcs.sh)
+## Reference command (matches scripts/start_mavproxy.sh)
 
 ```bash
 mavproxy.py \
     --master=udpin:192.168.53.1:14550 \
-    --out=127.0.0.1:14551 \
-    --out=127.0.0.1:14552 \
-    --out=udpbcast:192.168.54.255:14550 \
-    --out=udpin:192.168.54.1:14550 \
+    --out=udp:127.0.0.1:14550 \        # local QGC (AutoConnect UDP)
+    --out=127.0.0.1:14551 \            # spare local link
+    --out=127.0.0.1:14552 \            # MAV_Widget
+    --out=udp:127.0.0.1:14545 \        # mav-ap-fanout feed → AP phones
     --nowait \
     --force-connected \
     --non-interactive
 ```
+
+> **AP clients:** telemetry is delivered by `mav-ap-fanout.service`
+> (`scripts/mav-ap-fanout.py`), which **unicasts** to every phone on the AP and
+> owns `192.168.54.1:14550` for their uplink. We no longer use `udpbcast`:
+> pymavlink latches its broadcast socket onto the first responder (the local
+> QGC), so phones never received data. See
+> [INSTALL_WINMATE.md](INSTALL_WINMATE.md) §4.

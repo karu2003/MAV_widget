@@ -6,6 +6,7 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 MAVPROXY_SERVICE="mavproxy-gcs.service"
 WIDGET_SERVICE="mav-widget.service"
+FANOUT_SERVICE="mav-ap-fanout.service"
 
 if [[ "$(id -u)" -eq 0 && -n "${SUDO_USER:-}" ]]; then
     TARGET_USER="${SUDO_USER}"
@@ -26,6 +27,7 @@ chmod +x \
     "${PROJECT_DIR}/scripts/run_widget.sh" \
     "${PROJECT_DIR}/scripts/autostart-gcs.sh" \
     "${PROJECT_DIR}/scripts/start_mavproxy.sh" \
+    "${PROJECT_DIR}/scripts/mav-ap-fanout.py" \
     "${PROJECT_DIR}/scripts/wait_gcs_ready.sh" \
     "${PROJECT_DIR}/scripts/wait_mavproxy_link.sh" \
     "${PROJECT_DIR}/scripts/logs.sh" \
@@ -51,7 +53,7 @@ if [[ "$(id -u)" -eq 0 ]]; then
 fi
 
 mkdir -p "${USER_UNIT_DIR}"
-for svc in "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}"; do
+for svc in "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}" "${FANOUT_SERVICE}"; do
     unit="${svc%.service}"
     sed -e "s|__PROJECT_DIR__|${PROJECT_DIR}|g" -e "s|__LOG_DIR__|${LOG_DIR}|g" \
         "${PROJECT_DIR}/systemd/${unit}.service" > "${USER_UNIT_DIR}/${svc}"
@@ -79,8 +81,8 @@ run_user_systemctl() {
 }
 
 run_user_systemctl daemon-reload
-run_user_systemctl enable "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}"
-run_user_systemctl restart "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}" || true
+run_user_systemctl enable "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}" "${FANOUT_SERVICE}"
+run_user_systemctl restart "${MAVPROXY_SERVICE}" "${WIDGET_SERVICE}" "${FANOUT_SERVICE}" || true
 
 echo ""
 echo "Status:"

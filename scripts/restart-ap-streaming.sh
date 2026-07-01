@@ -24,6 +24,10 @@ if [[ -d "$RUNTIME" ]] && sudo -u "$GCS_USER" \
     sudo -u "$GCS_USER" \
         XDG_RUNTIME_DIR="$RUNTIME" DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
         systemctl --user restart mavproxy-gcs.service &
+    # Re-bind the unicast fan-out relay to AP_IP after the AP interface returns.
+    sudo -u "$GCS_USER" \
+        XDG_RUNTIME_DIR="$RUNTIME" DBUS_SESSION_BUS_ADDRESS="unix:path=${RUNTIME}/bus" \
+        systemctl --user restart mav-ap-fanout.service 2>/dev/null &
 else
     log "mavproxy-gcs not active yet (skip)"
 fi

@@ -127,7 +127,8 @@ Vertical axes (`ABS_Y`, `ABS_RX`) are inverted in software — see `AXIS_INVERT`
 
 ## Installation
 
-Full GCS setup (network, concurrent Wi‑Fi + AP, MAVProxy, widget, autostart): **[INSTALL.md](INSTALL.md)**
+- **Winmate GCS, built‑in radio on `usb0` (from scratch, one command):** **[docs/INSTALL_WINMATE.md](docs/INSTALL_WINMATE.md)**
+- Dev‑board layout (external USB‑Ethernet radio → `eth0`): **[INSTALL.md](INSTALL.md)**
 
 ---
 

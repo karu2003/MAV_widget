@@ -89,6 +89,8 @@ setup_interface() {
     log "Creating $AP on $WLAN"
     iw dev "$WLAN" interface add "$AP" type __ap
     ip link set dev "$AP" address "$AP_MAC"
+    # Keep NetworkManager from managing/flushing the AP IP (MT7921 etc.).
+    nmcli device set "$AP" managed no 2>/dev/null || true
     ip link set "$AP" down
     ip link set "$AP" up
 
